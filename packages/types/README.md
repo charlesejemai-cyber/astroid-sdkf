@@ -21,7 +21,7 @@ Includes:
 - **Entities** — `Organization`, `User`, `Agent`, `Wallet`, `Policy`, `Budget`, `Transaction`, `Proposal`, `Approval`, `Notification`, `ApiKey`, `Webhook`, `Session`, `MemoryRecord`, and more.
 - **Enums** — mirrored 1:1 with the `astroid-api` Prisma schema.
 - **Response envelope** — `ApiResponse<T>` = `{ success, data, meta, requestId }`.
-- **Pagination** — `PaginationParams`, `Paginated<T>`, `PaginationMeta`.
+- **Pagination** — `PaginationParams`, `PaginatedResponse`, `Paginated<T>`, `PaginationMeta`, `CursorPaginationParams`, `CursorPaginated`.
 - **Webhooks & events** — dot.case event names and a fully-typed `WebhookEventDataMap`.
 - **AI-native** — `PaymentIntent`, `PaymentIntentResult`.
 

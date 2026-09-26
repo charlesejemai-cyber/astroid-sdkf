@@ -64,3 +64,4 @@ export {
   type LogSink,
   type RetryMiddlewareOptions,
 } from './middleware.js';
+export * from './errors.js';

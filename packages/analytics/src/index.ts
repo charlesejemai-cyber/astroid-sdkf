@@ -27,6 +27,28 @@ import type {
   TransactionVolumeParams,
   TransactionVolumeReport,
 } from '@astroid/types';
+// Re-export the aggregated-metrics query helpers (issue #78) from the package
+// entry point so consumers can call them directly as well as through
+// {@link AnalyticsResource}. These were previously imported but never used,
+// which failed the `dts` build (`TS6192: All imports in import declaration are
+// unused`).
+export {
+  AnalyticsQueryResource,
+  getAgentExecutionCounts,
+  getFeeExpenditure,
+  getTransactionVolume,
+  buildAnalyticsPath,
+  buildAnalyticsQuery,
+  resolveTimeRange,
+  toIso8601,
+  type AgentExecutionCountFilter,
+  type AnalyticsGranularity,
+  type AnalyticsMetricType,
+  type FeeExpenditureFilter,
+  type ResolvedTimeRange,
+  type TimeRangeFilter,
+  type TransactionVolumeFilter,
+} from './analytics.js';
 
 export {
   exportToCSV,

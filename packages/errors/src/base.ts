@@ -65,6 +65,14 @@ export class AstroidError extends Error {
     Object.setPrototypeOf(this, new.target.prototype);
   }
 
+  /**
+   * Alias for {@link code} using the `errorCode` spelling from the API error
+   * envelope, so callers can branch on either name.
+   */
+  get errorCode(): string {
+    return this.code;
+  }
+
   /** Whether retrying the request could plausibly succeed. */
   get isRetryable(): boolean {
     return false;

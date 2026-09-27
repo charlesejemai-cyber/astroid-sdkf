@@ -88,7 +88,10 @@ class TokenBucketLimiter {
     this.capacity = positive(options.burstCapacity, DEFAULT_BURST_CAPACITY);
     this.tokens = this.capacity;
     this.refillPerMs =
-      Math.max(MIN_REFILL_PER_MS, positive(options.maxRequestsPerSecond, DEFAULT_REQUESTS_PER_SECOND)) / 1000;
+      Math.max(
+        MIN_REFILL_PER_MS,
+        positive(options.maxRequestsPerSecond, DEFAULT_REQUESTS_PER_SECOND),
+      ) / 1000;
     this.maxQueueLength = positive(options.maxQueueLength, DEFAULT_MAX_QUEUE_LENGTH);
     this.queueTimeoutMs = Math.max(0, options.queueTimeoutMs ?? DEFAULT_QUEUE_TIMEOUT_MS);
     this.lastRefillAt = Date.now();
@@ -139,7 +142,10 @@ class TokenBucketLimiter {
       };
       waiter.timeout =
         this.queueTimeoutMs > 0
-          ? setTimeout(() => this.failWaiter(waiter, this.timeoutError(waiter)), this.queueTimeoutMs)
+          ? setTimeout(
+              () => this.failWaiter(waiter, this.timeoutError(waiter)),
+              this.queueTimeoutMs,
+            )
           : undefined;
       if (signal?.aborted) {
         this.failWaiter(waiter, new DOMException('The rate-limit wait was aborted.', 'AbortError'));
@@ -188,10 +194,13 @@ class TokenBucketLimiter {
     const now = Date.now();
     const cooldownWait = Math.max(0, this.cooldownUntilAt - now);
     const tokenWait = this.tokens >= 1 ? 0 : Math.ceil((1 - this.tokens) / this.refillPerMs);
-    setTimeout(() => {
-      this.refillScheduled = false;
-      this.drain(Date.now());
-    }, Math.max(1, cooldownWait, tokenWait));
+    setTimeout(
+      () => {
+        this.refillScheduled = false;
+        this.drain(Date.now());
+      },
+      Math.max(1, cooldownWait, tokenWait),
+    );
   }
 
   /** Notify the limiter of a server-side back-off, honouring Retry-After. */
@@ -283,9 +292,7 @@ function abortError(message: string): Error {
  * astroid.use(createRateLimiterMiddleware({ maxRequestsPerSecond: 25, burstCapacity: 40 }));
  * ```
  */
-export function createRateLimiterMiddleware(
-  options: RateLimitMiddlewareOptions = {},
-): Middleware {
+export function createRateLimiterMiddleware(options: RateLimitMiddlewareOptions = {}): Middleware {
   const limiter = new TokenBucketLimiter(options);
 
   return {

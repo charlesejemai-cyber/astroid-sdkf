@@ -1,4 +1,14 @@
+import { Networks } from '@stellar/stellar-base';
 import { ValidationError } from '@astroid/errors';
+import type {
+  StellarNetworkState,
+  TransactionFeeEstimate,
+  TransactionFeeEstimateOptions,
+} from '@astroid/types';
+
+import { encodeTransaction } from './builder.js';
+import { decodeTransactionXDR } from './decoder.js';
+import { MIN_BASE_FEE_STROOPS } from './validator.js';
 
 /**
  * Represents a fee stats bucket returned by Horizon /fee_stats.
@@ -115,8 +125,9 @@ export async function queryFeeStats(options: QueryFeeStatsOptions = {}): Promise
  * @param options - Configuration including horizonUrl and fetch implementation.
  * @returns FeeStatsResult or null.
  */
-export async function queryFeeStatsSafe(options: QueryFeeStatsOptions = {}):
-  Promise<FeeStatsResult | null> {
+export async function queryFeeStatsSafe(
+  options: QueryFeeStatsOptions = {},
+): Promise<FeeStatsResult | null> {
   try {
     return await queryFeeStats(options);
   } catch {
@@ -151,7 +162,8 @@ export function estimateFromNetworkFee(
   }
 
   const validBase = Number.isNaN(baseFee) || baseFee <= 0 ? 100 : baseFee;
-  const buffered = Math.ceil(liveFee * (1 + bufferPercentage / 100));
+  // Integer math avoids floating-point drift (e.g. 200 * 1.1 -> 220.00000000000003).
+  const buffered = Math.ceil((liveFee * (100 + bufferPercentage)) / 100);
   const recommendedFee = Math.max(buffered, validBase);
 
   let networkState: FeeEstimationResult['networkState'] = 'normal';
@@ -199,24 +211,133 @@ export async function estimateLiveFee(
     };
   }
 
-  // Find freshest bucket or fallback to modeFee
-  let activeLiveFee = stats.modeFee;
-  if (stats.feeCharged.length > 0) {
-    // Sort by seconds ascending to get freshest
-    const sorted = [...stats.feeCharged].sort((a, b) => (a.seconds ?? 0) - (b.seconds ?? 0));
-    const freshest = sorted[0];
-    if (freshest && freshest.p50 !== undefined && freshest.p50 !== null) {
-      activeLiveFee = Number(freshest.p50);
-    } else if (freshest && freshest.fee_charged !== undefined && freshest.fee_charged !== null) {
-      activeLiveFee = Number(freshest.fee_charged);
-    }
-  }
+  const activeLiveFee = pickLiveFee(stats);
 
   const result = estimateFromNetworkFee(activeLiveFee, baseFee, options);
   return {
     ...result,
     liveFee: activeLiveFee,
   };
+}
+
+/** Pick the most representative live fee from a set of Horizon buckets. */
+function pickLiveFee(stats: FeeStatsResult): number {
+  let activeLiveFee = stats.modeFee;
+  if (stats.feeCharged.length > 0) {
+    // Sort by seconds ascending; the freshest bucket has the largest window.
+    const sorted = [...stats.feeCharged].sort((a, b) => (a.seconds ?? 0) - (b.seconds ?? 0));
+    const freshest = sorted[sorted.length - 1];
+    if (freshest && freshest.p50 !== undefined && freshest.p50 !== null) {
+      activeLiveFee = Number(freshest.p50);
+    } else if (freshest && freshest.fee_charged !== undefined && freshest.fee_charged !== null) {
+      activeLiveFee = Number(freshest.fee_charged);
+    }
+  }
+  return activeLiveFee;
+}
+
+/** Coerce an optional base fee into a positive integer, falling back to the floor. */
+function normalizeBaseFee(baseFee: number | undefined): number {
+  return typeof baseFee === 'number' && Number.isFinite(baseFee) && baseFee > 0
+    ? Math.floor(baseFee)
+    : MIN_BASE_FEE_STROOPS;
+}
+
+/**
+ * Estimate the fee to bid for an unsigned transaction before broadcast.
+ *
+ * The estimator accepts either an unsigned transaction envelope (a base64 XDR
+ * string or a built `Transaction`) or an explicit operation count. When a
+ * `horizonUrl`/`fetch` is supplied it also samples live Horizon fee stats and
+ * adds a safety buffer; if that query fails it degrades gracefully to the
+ * static base fee instead of throwing. A malformed envelope, by contrast, is a
+ * caller error and surfaces as a structured {@link ValidationError}.
+ *
+ * @param options Envelope or operation count, base fee, buffer and network options.
+ * @returns A {@link TransactionFeeEstimate} with min and recommended total fees.
+ * @throws {ValidationError} When `transaction` is supplied but cannot be decoded.
+ *
+ * @example
+ * ```ts
+ * const estimate = await estimateFee({
+ *   transaction: unsignedTx,
+ *   horizonUrl: 'https://horizon-testnet.stellar.org',
+ * });
+ * tx.fee = String(estimate.recommendedFee);
+ * ```
+ */
+export async function estimateFee(
+  options: TransactionFeeEstimateOptions = {},
+): Promise<TransactionFeeEstimate> {
+  const bufferPercentage = options.bufferPercentage ?? 30;
+
+  let operationCount = options.operationCount ?? 1;
+  let baseFee = options.baseFee;
+  let transactionXdr: string | undefined;
+
+  if (options.transaction !== undefined) {
+    try {
+      transactionXdr = encodeTransaction(options.transaction as unknown as string);
+      const decoded = decodeTransactionXDR(
+        transactionXdr,
+        options.networkPassphrase ?? Networks.PUBLIC,
+      );
+      operationCount = decoded.operations.length;
+      const envelopeFee = Number(decoded.fee);
+      if (baseFee === undefined && Number.isFinite(envelopeFee) && envelopeFee > 0 && operationCount > 0) {
+        baseFee = Math.ceil(envelopeFee / operationCount);
+      }
+    } catch (error) {
+      throw new ValidationError('Failed to estimate fee: invalid transaction envelope.', {
+        code: 'INVALID_TRANSACTION_ENVELOPE',
+        cause: error,
+      });
+    }
+  }
+
+  if (!Number.isFinite(operationCount) || operationCount <= 0) {
+    operationCount = 1;
+  }
+  operationCount = Math.max(1, Math.floor(operationCount));
+
+  const resolvedBaseFee = normalizeBaseFee(baseFee);
+
+  let live = false;
+  let networkState: StellarNetworkState = 'unknown';
+  let recommendedBaseFee = resolvedBaseFee;
+
+  if (options.horizonUrl !== undefined || options.fetch !== undefined) {
+    const stats = await queryFeeStatsSafe({
+      horizonUrl: options.horizonUrl,
+      fetch: options.fetch,
+    });
+
+    if (stats) {
+      const liveFee = pickLiveFee(stats);
+      if (Number.isFinite(liveFee) && liveFee > 0) {
+        const fromLive = estimateFromNetworkFee(liveFee, resolvedBaseFee, { bufferPercentage });
+        live = true;
+        recommendedBaseFee = Math.max(fromLive.recommendedFee, resolvedBaseFee);
+        networkState = fromLive.networkState;
+      }
+    }
+  }
+
+  const minFee = resolvedBaseFee * operationCount;
+  const recommendedFee = Math.max(recommendedBaseFee * operationCount, minFee);
+
+  const estimate: TransactionFeeEstimate = {
+    operationCount,
+    baseFee: resolvedBaseFee,
+    minFee,
+    recommendedBaseFee,
+    recommendedFee,
+    bufferPercentage,
+    networkState,
+    live,
+  };
+  if (transactionXdr !== undefined) estimate.transactionXdr = transactionXdr;
+  return estimate;
 }
 
 /**

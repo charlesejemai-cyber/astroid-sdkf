@@ -38,8 +38,7 @@ export const PaymentIntentOutcome = {
   SIMULATED: 'simulated',
   REJECTED: 'rejected',
 } as const;
-export type PaymentIntentOutcome =
-  (typeof PaymentIntentOutcome)[keyof typeof PaymentIntentOutcome];
+export type PaymentIntentOutcome = (typeof PaymentIntentOutcome)[keyof typeof PaymentIntentOutcome];
 
 /**
  * The result of requesting a payment via an intent. Exactly which fields are

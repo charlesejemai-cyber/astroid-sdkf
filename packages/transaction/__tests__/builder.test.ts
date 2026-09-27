@@ -120,6 +120,52 @@ describe('buildPaymentTransaction', () => {
   });
 });
 
+describe('buildPaymentTransaction — memo types', () => {
+  const HEX_32 = 'ab'.repeat(32);
+
+  function buildWithMemo(memo: Record<string, unknown>) {
+    const account = new Account(Keypair.random().publicKey(), '1');
+    return buildPaymentTransaction({
+      source: account,
+      networkPassphrase: Networks.TESTNET,
+      destination: Keypair.random().publicKey(),
+      asset: 'XLM',
+      amount: '1',
+      ...memo,
+    });
+  }
+
+  it('attaches a hash memo', () => {
+    const tx = buildWithMemo({ memoHash: HEX_32 });
+    const decoded = TransactionBuilder.fromXDR(tx.toXDR(), Networks.TESTNET);
+    expect(decoded.memo.type).toBe('hash');
+    expect(Buffer.from(decoded.memo.value as Buffer).toString('hex')).toBe(HEX_32);
+  });
+
+  it('attaches a return memo', () => {
+    const tx = buildWithMemo({ memoReturn: HEX_32 });
+    const decoded = TransactionBuilder.fromXDR(tx.toXDR(), Networks.TESTNET);
+    expect(decoded.memo.type).toBe('return');
+  });
+
+  it('attaches an id memo', () => {
+    const tx = buildWithMemo({ memoId: 42 });
+    const decoded = TransactionBuilder.fromXDR(tx.toXDR(), Networks.TESTNET);
+    expect(decoded.memo.type).toBe('id');
+    expect(String(decoded.memo.value)).toBe('42');
+  });
+
+  it('rejects a malformed hash memo', () => {
+    expect(() => buildWithMemo({ memoHash: 'not-hex' })).toThrowError(ValidationError);
+  });
+
+  it('rejects more than one memo option', () => {
+    expect(() => buildWithMemo({ memoText: 'hi', memoHash: HEX_32 })).toThrowError(
+      ValidationError,
+    );
+  });
+});
+
 describe('parseAsset', () => {
   it('returns native for XLM', () => {
     expect(parseAsset('XLM').isNative()).toBe(true);

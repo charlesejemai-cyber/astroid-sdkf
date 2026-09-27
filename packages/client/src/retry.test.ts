@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ServerError, AuthenticationError } from '@astroid/errors';
+import { AuthenticationError } from '@astroid/errors';
 import {
   Astroid,
   createRetryMiddleware,
@@ -22,16 +22,25 @@ describe('Exponential Backoff & Retry Logic in Client & Middleware', () => {
     expect(backoffDelay(10, config, mockRandomMax)).toBe(1000);
   });
 
-  it('isRetryableStatus identifies transient status codes correctly', () => {
-    expect(isRetryableStatus(503)).toBe(true);
-    expect(isRetryableStatus(500)).toBe(true);
-    expect(isRetryableStatus(502)).toBe(true);
-    expect(isRetryableStatus(504)).toBe(true);
+  it('isRetryableStatus retries every 5xx and 429, and no other 4xx', () => {
+    // Retryable: rate limiting and any server-side failure.
     expect(isRetryableStatus(429)).toBe(true);
+    expect(isRetryableStatus(500)).toBe(true);
+    expect(isRetryableStatus(501)).toBe(true);
+    expect(isRetryableStatus(502)).toBe(true);
+    expect(isRetryableStatus(503)).toBe(true);
+    expect(isRetryableStatus(504)).toBe(true);
+    expect(isRetryableStatus(505)).toBe(true);
+
+    // Non-retryable client errors — including transient-looking 4xx such as
+    // 408 (Request Timeout) and 425 (Too Early).
     expect(isRetryableStatus(400)).toBe(false);
     expect(isRetryableStatus(401)).toBe(false);
     expect(isRetryableStatus(403)).toBe(false);
     expect(isRetryableStatus(404)).toBe(false);
+    expect(isRetryableStatus(408)).toBe(false);
+    expect(isRetryableStatus(422)).toBe(false);
+    expect(isRetryableStatus(425)).toBe(false);
   });
 
   it('supports constructor retries and retryDelay options', () => {

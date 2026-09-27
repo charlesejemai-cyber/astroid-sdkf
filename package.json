@@ -39,5 +39,21 @@
     "tsup": "8.3.5",
     "typescript": "5.7.3",
     "vitest": "2.1.8"
+  },
+  "dependencies": {
+    "@astroid/agent": "workspace:*",
+    "@astroid/analytics": "workspace:*",
+    "@astroid/auth": "workspace:*",
+    "@astroid/budget": "workspace:*",
+    "@astroid/client": "workspace:*",
+    "@astroid/core": "workspace:*",
+    "@astroid/errors": "workspace:*",
+    "@astroid/notification": "workspace:*",
+    "@astroid/policy": "workspace:*",
+    "@astroid/transaction": "workspace:*",
+    "@astroid/types": "workspace:*",
+    "@astroid/utils": "workspace:*",
+    "@astroid/wallet": "workspace:*",
+    "@astroid/webhook": "workspace:*"
   }
 }

@@ -32,7 +32,9 @@ describe('serializeQuery', () => {
       status: ['active', 'pending'],
       tags: ['ai', null, 'stellar', ''],
     });
-    expect(query).toBe('?status%5B0%5D=active&status%5B1%5D=pending&tags%5B0%5D=ai&tags%5B2%5D=stellar');
+    expect(query).toBe(
+      '?status%5B0%5D=active&status%5B1%5D=pending&tags%5B0%5D=ai&tags%5B2%5D=stellar',
+    );
   });
 
   it('serializes nested objects recursively', () => {
@@ -45,6 +47,8 @@ describe('serializeQuery', () => {
         },
       },
     });
-    expect(query).toBe('?filter%5Basset%5D=USDC&filter%5BminAmount%5D=100&filter%5Bnested%5D%5Bdeep%5D=true');
+    expect(query).toBe(
+      '?filter%5Basset%5D=USDC&filter%5BminAmount%5D=100&filter%5Bnested%5D%5Bdeep%5D=true',
+    );
   });
 });

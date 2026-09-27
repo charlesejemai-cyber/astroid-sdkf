@@ -14,7 +14,7 @@
 import {
   AstroidError,
   AuthenticationError,
-  AuthorizationError,
+  ForbiddenError,
   ValidationError,
   NotFoundError,
   ConflictError,
@@ -22,7 +22,7 @@ import {
   BudgetExceededError,
   ApprovalRequiredError,
   RateLimitError,
-  ServerError,
+  InternalServerError,
   type AstroidErrorOptions,
 } from '@astroid/errors';
 import type { ApiError } from '@astroid/types';
@@ -498,7 +498,7 @@ function buildTypedError(
     case 'TOKEN_EXPIRED':
       return new AuthenticationError(message, { code, ...options });
     case 'FORBIDDEN':
-      return new AuthorizationError(message, { code, ...options });
+      return new ForbiddenError(message, { code, ...options });
     case 'VALIDATION_ERROR':
     case 'BAD_REQUEST':
       return new ValidationError(message, { code, ...options });
@@ -516,7 +516,7 @@ function buildTypedError(
       return new RateLimitError(message, { code, ...options });
     case 'INTERNAL_ERROR':
     case 'SERVICE_UNAVAILABLE':
-      return new ServerError(message, { code, ...options });
+      return new InternalServerError(message, { code, ...options });
     default:
       return new AstroidError(message, { code, ...options });
   }

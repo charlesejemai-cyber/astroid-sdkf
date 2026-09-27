@@ -43,7 +43,9 @@ describe('Agent validation schemas', () => {
 
       expect(() => validateCreateAgentParams(missingCaps)).toThrowError(/capabilities/i);
       expect(isValidCreateAgentParams({ ...missingCaps, capabilities: [] })).toBe(false);
-      expect(isValidCreateAgentParams({ ...missingCaps, capabilities: ['valid', 123] })).toBe(false);
+      expect(isValidCreateAgentParams({ ...missingCaps, capabilities: ['valid', 123] })).toBe(
+        false,
+      );
     });
 
     it('validates required initialBudget field and nested properties', () => {
@@ -54,10 +56,30 @@ describe('Agent validation schemas', () => {
 
       expect(() => validateCreateAgentParams(missingBudget)).toThrowError(/initialBudget/i);
       expect(isValidCreateAgentParams({ ...missingBudget, initialBudget: {} })).toBe(false);
-      expect(isValidCreateAgentParams({ ...missingBudget, initialBudget: { currency: '', amount: '100' } })).toBe(false);
-      expect(isValidCreateAgentParams({ ...missingBudget, initialBudget: { currency: 'USDC', amount: '' } })).toBe(false);
-      expect(isValidCreateAgentParams({ ...missingBudget, initialBudget: { currency: 'USDC', amount: 'invalid-number' } })).toBe(false);
-      expect(isValidCreateAgentParams({ ...missingBudget, initialBudget: { currency: 'USDC', amount: '-50' } })).toBe(false);
+      expect(
+        isValidCreateAgentParams({
+          ...missingBudget,
+          initialBudget: { currency: '', amount: '100' },
+        }),
+      ).toBe(false);
+      expect(
+        isValidCreateAgentParams({
+          ...missingBudget,
+          initialBudget: { currency: 'USDC', amount: '' },
+        }),
+      ).toBe(false);
+      expect(
+        isValidCreateAgentParams({
+          ...missingBudget,
+          initialBudget: { currency: 'USDC', amount: 'invalid-number' },
+        }),
+      ).toBe(false);
+      expect(
+        isValidCreateAgentParams({
+          ...missingBudget,
+          initialBudget: { currency: 'USDC', amount: '-50' },
+        }),
+      ).toBe(false);
     });
   });
 });

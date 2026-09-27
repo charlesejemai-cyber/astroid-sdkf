@@ -363,11 +363,20 @@ export function simulatePolicyLocal(
 
     for (const op of decodedTx.operations) {
       const opAsset = op.asset || (config.asset as string | undefined);
-      const opAmount = typeof op.amount === 'string' ? parseFloat(op.amount) : typeof op.amount === 'number' ? op.amount : 0;
+      const opAmount =
+        typeof op.amount === 'string'
+          ? parseFloat(op.amount)
+          : typeof op.amount === 'number'
+            ? op.amount
+            : 0;
       const opDest = op.destination || op.recipient || '';
 
       // 1. Asset Allowlist rule
-      const allowedAssets = config.allowedAssets || (policy.type === 'ALLOWED_ASSETS' && Array.isArray(config.assets) ? config.assets : undefined);
+      const allowedAssets =
+        config.allowedAssets ||
+        (policy.type === 'ALLOWED_ASSETS' && Array.isArray(config.assets)
+          ? config.assets
+          : undefined);
       if (Array.isArray(allowedAssets) && allowedAssets.length > 0) {
         if (opAsset && !allowedAssets.includes(opAsset)) {
           violations.push({
@@ -393,7 +402,12 @@ export function simulatePolicyLocal(
       }
 
       // 3. Max Amount Limit rule
-      const maxAmount = typeof config.maxAmount === 'number' ? config.maxAmount : typeof config.limit === 'number' ? config.limit : undefined;
+      const maxAmount =
+        typeof config.maxAmount === 'number'
+          ? config.maxAmount
+          : typeof config.limit === 'number'
+            ? config.limit
+            : undefined;
       if (typeof maxAmount === 'number' && maxAmount > 0) {
         if (opAmount > maxAmount) {
           violations.push({
@@ -408,7 +422,12 @@ export function simulatePolicyLocal(
       }
 
       // 4. Destination Denylist rule
-      const blockedRecipients = config.blockedRecipients || config.destinationDenylist || (policy.type === 'BLOCKED_RECIPIENTS' && Array.isArray(config.recipients) ? config.recipients : undefined);
+      const blockedRecipients =
+        config.blockedRecipients ||
+        config.destinationDenylist ||
+        (policy.type === 'BLOCKED_RECIPIENTS' && Array.isArray(config.recipients)
+          ? config.recipients
+          : undefined);
       if (Array.isArray(blockedRecipients) && blockedRecipients.length > 0) {
         if (opDest && blockedRecipients.includes(opDest)) {
           violations.push({

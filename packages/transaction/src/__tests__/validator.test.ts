@@ -11,7 +11,6 @@ import {
   TransactionBuilder,
 } from '@stellar/stellar-base';
 
-
 import {
   MAX_MEMO_TEXT_BYTES,
   MAX_TOTAL_FEE_STROOPS,
@@ -97,7 +96,9 @@ describe('validateTransactionEnvelope — XDR', () => {
   });
 
   it('flags non-base64 / undecodable XDR', () => {
-    expect(validateTransactionEnvelope('not base64!!!').errors[0]?.code).toBe('INVALID_ENVELOPE_XDR');
+    expect(validateTransactionEnvelope('not base64!!!').errors[0]?.code).toBe(
+      'INVALID_ENVELOPE_XDR',
+    );
     expect(validateTransactionEnvelope('AAAA').errors[0]?.code).toBe('INVALID_ENVELOPE_XDR');
   });
 
@@ -222,7 +223,9 @@ describe('validateTransactionEnvelope — JSON', () => {
   });
 
   it('rejects a non-object, non-string input', () => {
-    expect(validateTransactionEnvelope(42 as unknown as string).errors[0]?.code).toBe('INVALID_INPUT');
+    expect(validateTransactionEnvelope(42 as unknown as string).errors[0]?.code).toBe(
+      'INVALID_INPUT',
+    );
   });
 });
 

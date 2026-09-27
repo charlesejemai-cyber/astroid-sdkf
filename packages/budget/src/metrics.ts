@@ -41,10 +41,10 @@ function formatAmount(val: number): string {
 export function calculateUtilization(
   budget: Budget,
   history?: BudgetHistoryEntry[],
-  request?: SpendRequest
+  request?: SpendRequest,
 ): UtilizationResult {
   const limit = parseAmount(budget.limitAmount);
-  
+
   let spentNum = parseAmount(budget.spent);
   if (history && history.length > 0) {
     let totalHistory = 0;
@@ -91,7 +91,7 @@ export function calculateUtilization(
 export function isThresholdExceeded(
   budget: Budget,
   thresholds?: { warn?: number; critical?: number },
-  history?: BudgetHistoryEntry[]
+  history?: BudgetHistoryEntry[],
 ): ThresholdResult {
   const warn = thresholds?.warn ?? 0.8;
   const critical = thresholds?.critical ?? 0.95;

@@ -17,6 +17,7 @@
 import type { Agent } from './entities.js';
 import { AgentRole, AgentStatus } from './enums.js';
 import type { IsoDateTime } from './entities.js';
+import type { PaginationParams } from './common.js';
 
 export { AgentRole, AgentStatus } from './enums.js';
 export type { Agent } from './entities.js';
@@ -159,9 +160,7 @@ export const AGENT_STATUS_VALUES = Object.freeze(
 ) as readonly AgentStatus[];
 
 /** Every valid {@link AgentRole} value, as a readonly tuple. */
-export const AGENT_ROLE_VALUES = Object.freeze(
-  Object.values(AgentRole),
-) as readonly AgentRole[];
+export const AGENT_ROLE_VALUES = Object.freeze(Object.values(AgentRole)) as readonly AgentRole[];
 
 /** Runtime type guard: whether `value` is a valid {@link AgentStatus}. */
 export function isAgentStatus(value: unknown): value is AgentStatus {
@@ -235,3 +234,85 @@ export function normalizeCreateAgentDto(input: CreateAgentDto): CreateAgentDto {
 
 /** Type-only marker retained for documentation of the timestamp format. */
 export type AgentTimestamp = IsoDateTime;
+
+/* -------------------------------------------------------------------------- */
+/* Lifecycle events                                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Lifecycle events an autonomous agent can emit.
+ *
+ * The API exposes these as an event stream; clients subscribe to receive
+ * push-style notifications and can page through historical events.
+ */
+export const AgentLifecycleEventType = {
+  CREATED: 'agent.created',
+  SUSPENDED: 'agent.suspended',
+  RESUMED: 'agent.resumed',
+  BUDGET_EXHAUSTED: 'agent.budget_exhausted',
+} as const;
+export type AgentLifecycleEventType =
+  (typeof AgentLifecycleEventType)[keyof typeof AgentLifecycleEventType];
+
+/** Every valid {@link AgentLifecycleEventType} value, as a readonly tuple. */
+export const AGENT_LIFECYCLE_EVENT_TYPE_VALUES = Object.freeze(
+  Object.values(AgentLifecycleEventType),
+) as readonly AgentLifecycleEventType[];
+
+/** Structured payload attached to an agent lifecycle event. */
+export interface AgentLifecycleEventPayload {
+  /** The agent the event belongs to. */
+  agentId: string;
+  /** The organization that owns the agent. */
+  organizationId: string;
+  /** ISO-8601 instant the event occurred. */
+  occurredAt: IsoDateTime;
+  /** Free-form details, e.g. the exhausted budget for `agent.budget_exhausted`. */
+  details?: Record<string, unknown>;
+}
+
+/** A single agent lifecycle event, as returned by the event endpoints. */
+export interface AgentLifecycleEvent {
+  id: string;
+  type: AgentLifecycleEventType;
+  agentId: string;
+  organizationId: string;
+  occurredAt: IsoDateTime;
+  payload: AgentLifecycleEventPayload;
+}
+
+/** Filter + pagination parameters for listing agent lifecycle events. */
+export interface ListAgentEventsParams extends PaginationParams {
+  /** Only events of these types. */
+  eventTypes?: AgentLifecycleEventType[];
+  /** Only events at or after this instant (ISO-8601). */
+  from?: IsoDateTime;
+  /** Only events at or before this instant (ISO-8601). */
+  to?: IsoDateTime;
+}
+
+/**
+ * Options for creating an agent lifecycle event subscription.
+ *
+ * All fields are optional; the backend defaults to delivering every lifecycle
+ * event type with no history replay.
+ */
+export interface AgentEventSubscriptionOptions {
+  /** Only these event types are delivered. When omitted, all are delivered. */
+  eventTypes?: AgentLifecycleEventType[];
+  /** Replay events starting from this cursor. */
+  cursor?: string;
+  /** Whether to include historical events from before the subscription existed. */
+  includeHistory?: boolean;
+}
+
+/** A subscription to an agent's lifecycle event stream. */
+export interface AgentEventSubscription {
+  id: string;
+  agentId: string;
+  organizationId: string;
+  eventTypes: AgentLifecycleEventType[];
+  includeHistory: boolean;
+  status: 'ACTIVE' | 'PAUSED';
+  createdAt: IsoDateTime;
+}

@@ -14,23 +14,30 @@
  * @module
  */
 
-import { Account, Asset, Memo, Networks, Operation, TransactionBuilder } from '@stellar/stellar-base';
+import {
+  Account,
+  Asset,
+  Memo,
+  Networks,
+  Operation,
+  TransactionBuilder,
+} from '@stellar/stellar-base';
 import type { FeeBumpTransaction, Transaction, xdr } from '@stellar/stellar-base';
 import { ValidationError } from '@astroid/errors';
+
+import {
+  assertValidMemoHash,
+  assertValidMemoText,
+  assertValidPositiveAmount,
+  assertValidStellarPublicKey,
+} from './validate.js';
 
 /* -------------------------------------------------------------------------- */
 /* Public types                                                                */
 /* -------------------------------------------------------------------------- */
 
-/** Stellar public key (`G…`), the destination/source account format. */
-const STELLAR_PUBLIC_KEY_PATTERN = /^G[A-Z2-7]{55}$/;
-
 /** Known Stellar network passphrases accepted by the builders. */
-const KNOWN_PASSPHRASES = new Set<string>([
-  Networks.PUBLIC,
-  Networks.TESTNET,
-  Networks.FUTURENET,
-]);
+const KNOWN_PASSPHRASES = new Set<string>([Networks.PUBLIC, Networks.TESTNET, Networks.FUTURENET]);
 
 /** Options common to every transaction built here. */
 export interface BuildTransactionOptions {
@@ -44,6 +51,21 @@ export interface BuildTransactionOptions {
   timeout?: number;
   /** Optional standard text memo (max 28 bytes). */
   memoText?: string;
+  /**
+   * Optional `MEMO_HASH` value: 32 bytes encoded as 64 hexadecimal characters.
+   * Mutually exclusive with the other memo options.
+   */
+  memoHash?: string;
+  /**
+   * Optional `MEMO_RETURN` value: 32 bytes encoded as 64 hexadecimal characters.
+   * Mutually exclusive with the other memo options.
+   */
+  memoReturn?: string;
+  /**
+   * Optional `MEMO_ID` value: a non-negative 64-bit unsigned integer.
+   * Mutually exclusive with the other memo options.
+   */
+  memoId?: string | number;
 }
 
 /** Options for {@link buildPaymentTransaction}. */
@@ -68,28 +90,6 @@ function requireField(value: unknown, field: string): asserts value is string {
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new ValidationError(`Missing required transaction field: ${field}.`, {
       code: 'MISSING_FIELD',
-      details: { field },
-    });
-  }
-}
-
-/** Throw a `ValidationError` unless `value` is a positive finite amount. */
-function assertPositiveAmount(value: string | number, field: string): void {
-  const numeric = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(numeric) || numeric <= 0) {
-    throw new ValidationError(`${field} must be a positive finite amount.`, {
-      code: 'INVALID_AMOUNT',
-      details: { field },
-    });
-  }
-}
-
-/** Throw a `ValidationError` unless `address` looks like a Stellar public key. */
-function assertPublicKey(address: string, field: string): void {
-  requireField(address, field);
-  if (!STELLAR_PUBLIC_KEY_PATTERN.test(address.trim())) {
-    throw new ValidationError(`${field} must be a valid Stellar public key (G…).`, {
-      code: 'INVALID_ADDRESS',
       details: { field },
     });
   }
@@ -131,13 +131,54 @@ export function parseAsset(asset: string): Asset {
   }
   const code = trimmed.slice(0, separator);
   const issuer = trimmed.slice(separator + 1);
-  assertPublicKey(issuer, 'asset issuer');
+  assertValidStellarPublicKey(issuer, 'asset issuer');
   return new Asset(code, issuer);
 }
 
 /* -------------------------------------------------------------------------- */
 /* Builders                                                                    */
 /* -------------------------------------------------------------------------- */
+
+/** Resolve the configured memo (text/hash/return/id), enforcing at-most-one. */
+function resolveMemo(options: BuildTransactionOptions): Memo | undefined {
+  const configured = [
+    options.memoText !== undefined,
+    options.memoHash !== undefined,
+    options.memoReturn !== undefined,
+    options.memoId !== undefined,
+  ].filter(Boolean).length;
+
+  if (configured > 1) {
+    throw new ValidationError(
+      'At most one memo may be supplied (memoText, memoHash, memoReturn, or memoId).',
+      { code: 'CONFLICTING_MEMO' },
+    );
+  }
+
+  if (options.memoText !== undefined) {
+    assertValidMemoText(options.memoText);
+    return Memo.text(options.memoText);
+  }
+  if (options.memoHash !== undefined) {
+    assertValidMemoHash(options.memoHash, 'memoHash');
+    return Memo.hash(options.memoHash.trim());
+  }
+  if (options.memoReturn !== undefined) {
+    assertValidMemoHash(options.memoReturn, 'memoReturn');
+    return Memo.return(options.memoReturn.trim());
+  }
+  if (options.memoId !== undefined) {
+    const id = String(options.memoId).trim();
+    if (!/^\d{1,20}$/.test(id) || BigInt(id) > 18_446_744_073_709_551_615n) {
+      throw new ValidationError('memoId must be a uint64 value.', {
+        code: 'INVALID_MEMO',
+        details: { field: 'memoId' },
+      });
+    }
+    return Memo.id(id);
+  }
+  return undefined;
+}
 
 /** Shared construction of a `TransactionBuilder` primed with memo + timeout. */
 function createBuilder(options: BuildTransactionOptions): TransactionBuilder {
@@ -161,14 +202,8 @@ function createBuilder(options: BuildTransactionOptions): TransactionBuilder {
     fee: String(fee),
     networkPassphrase,
   });
-  if (options.memoText) {
-    if (new TextEncoder().encode(options.memoText).byteLength > 28) {
-      throw new ValidationError('Standard text memo must be 28 bytes or fewer.', {
-        code: 'INVALID_MEMO',
-      });
-    }
-    builder = builder.addMemo(Memo.text(options.memoText));
-  }
+  const memo = resolveMemo(options);
+  if (memo) builder = builder.addMemo(memo);
   builder = builder.setTimeout(options.timeout ?? 300);
   return builder;
 }
@@ -225,8 +260,8 @@ export function buildTransaction(
  */
 export function buildPaymentTransaction(options: PaymentTransactionOptions): Transaction {
   const { destination, amount } = options;
-  assertPublicKey(destination, 'destination');
-  assertPositiveAmount(amount, 'amount');
+  assertValidStellarPublicKey(destination, 'destination');
+  assertValidPositiveAmount(amount, 'amount');
 
   const asset = parseAsset(options.asset);
   return buildTransaction(options, [
@@ -248,9 +283,7 @@ export function buildPaymentTransaction(options: PaymentTransactionOptions): Tra
  * @param source The transaction to encode.
  * @returns The base64 XDR envelope.
  */
-export function encodeTransaction(
-  source: string | Transaction | FeeBumpTransaction,
-): string {
+export function encodeTransaction(source: string | Transaction | FeeBumpTransaction): string {
   if (typeof source === 'string') {
     if (source.trim().length === 0) {
       throw new ValidationError('Transaction XDR must be a non-empty string.', {

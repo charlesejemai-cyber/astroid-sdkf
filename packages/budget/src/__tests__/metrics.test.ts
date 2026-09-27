@@ -63,7 +63,10 @@ describe('calculateUtilization', () => {
 
   it('uses window history when provided to compute spent', () => {
     const budget = makeBudget({ limitAmount: '100', spent: '0', remaining: '100' });
-    const history = [makeEntry({ amount: '40' }), makeEntry({ id: 'e2', amount: '30', createdAt: '2025-06-15T13:00:00Z' })];
+    const history = [
+      makeEntry({ amount: '40' }),
+      makeEntry({ id: 'e2', amount: '30', createdAt: '2025-06-15T13:00:00Z' }),
+    ];
 
     const result = calculateUtilization(budget, history);
     expect(result.spent).toBe('70');

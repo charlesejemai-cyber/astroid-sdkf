@@ -89,8 +89,13 @@ describe('estimateFromNetworkFee', () => {
     expect(r.networkState).toBe('unknown');
   });
 
-  it('classifies a busy network when the live fee is high', () => {
+  it('classifies a congested network when the live fee is very high', () => {
     const r = estimateFromNetworkFee(8000, 100);
+    expect(r.networkState).toBe('congested');
+  });
+
+  it('classifies a busy network when the live fee is moderately high', () => {
+    const r = estimateFromNetworkFee(1000, 100);
     expect(r.networkState).toBe('busy');
   });
 });

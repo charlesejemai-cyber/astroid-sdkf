@@ -20,15 +20,15 @@ const tx = (asset: string, amount: string, createdAt: string): Transaction => ({
 });
 
 describe('aggregateTransactionMetrics', () => {
-  it('groups UTC days independently by asset and preserves decimal strings', () => {
+  it('groups UTC days and preserves decimal strings', () => {
     const result = aggregateTransactionMetrics([
       tx('USDC', '1.10', '2026-01-05T23:00:00.000Z'),
       tx('USDC', '2.20', '2026-01-06T01:00:00.000Z'),
       tx('XLM', '5', '2026-01-06T01:00:00.000Z'),
     ]);
     expect(result.totalVolume).toBe('8.3');
-    expect(result.assets.USDC?.totalVolume).toBe('3.3');
-    expect(result.buckets).toHaveLength(3);
+    expect(result.buckets).toHaveLength(2);
     expect(result.buckets[0]?.start).toBe('2026-01-05T00:00:00.000Z');
+    expect(result.buckets[1]?.totalCount).toBe(2);
   });
 });

@@ -1,0 +1,35 @@
+{
+  "name": "@astroid/integration",
+  "version": "0.1.0",
+  "description": "Cross-package integration test suite for the Astroid SDK. Test-only and never published.",
+  "license": "MIT",
+  "author": "Astroid",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@astroid/agent": "workspace:*",
+    "@astroid/analytics": "workspace:*",
+    "@astroid/auth": "workspace:*",
+    "@astroid/budget": "workspace:*",
+    "@astroid/client": "workspace:*",
+    "@astroid/core": "workspace:*",
+    "@astroid/errors": "workspace:*",
+    "@astroid/notification": "workspace:*",
+    "@astroid/policy": "workspace:*",
+    "@astroid/transaction": "workspace:*",
+    "@astroid/types": "workspace:*",
+    "@astroid/utils": "workspace:*",
+    "@astroid/wallet": "workspace:*",
+    "@astroid/webhook": "workspace:*",
+    "@stellar/stellar-base": "^15.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.5",
+    "typescript": "5.7.3",
+    "vitest": "2.1.8"
+  }
+}

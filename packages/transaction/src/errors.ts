@@ -28,9 +28,7 @@ export class TransactionSimulationError extends AstroidTransactionError {
 
   constructor(
     message: string,
-    options?: AstroidErrorOptions &
-      TransactionXdrOption &
-      StellarCodeOptions,
+    options?: AstroidErrorOptions & TransactionXdrOption & StellarCodeOptions,
   ) {
     super(message, options);
     this.stellarCode = options?.stellarCode;
@@ -49,9 +47,7 @@ export class TransactionSubmissionError extends AstroidTransactionError {
 
   constructor(
     message: string,
-    options?: AstroidErrorOptions &
-      TransactionXdrOption &
-      StellarCodeOptions,
+    options?: AstroidErrorOptions & TransactionXdrOption & StellarCodeOptions,
   ) {
     super(message, options);
     this.stellarCode = options?.stellarCode;
@@ -97,10 +93,16 @@ export function normalizeTransactionError(
     if ('stellarCode' in err && typeof (err as Record<string, unknown>).stellarCode === 'string') {
       stellarCode = (err as Record<string, unknown>).stellarCode as string;
     }
-    if ('operationCode' in err && typeof (err as Record<string, unknown>).operationCode === 'string') {
+    if (
+      'operationCode' in err &&
+      typeof (err as Record<string, unknown>).operationCode === 'string'
+    ) {
       operationCode = (err as Record<string, unknown>).operationCode as string;
     }
-    if ('operationResultCodes' in err && Array.isArray((err as Record<string, unknown>).operationResultCodes)) {
+    if (
+      'operationResultCodes' in err &&
+      Array.isArray((err as Record<string, unknown>).operationResultCodes)
+    ) {
       operationResultCodes = (err as Record<string, unknown>).operationResultCodes as string[];
     }
     if ('details' in err) {
@@ -115,8 +117,9 @@ export function normalizeTransactionError(
     if (typeof obj.status === 'number') status = obj.status;
     if (typeof obj.stellarCode === 'string') stellarCode = obj.stellarCode;
     if (typeof obj.operationCode === 'string') operationCode = obj.operationCode;
-    if (Array.isArray(obj.operationResultCodes)) operationResultCodes = obj.operationResultCodes as string[];
-    
+    if (Array.isArray(obj.operationResultCodes))
+      operationResultCodes = obj.operationResultCodes as string[];
+
     // Check Horizon extras result codes
     const extras = obj.extras as Record<string, unknown> | undefined;
     if (extras) {
@@ -126,6 +129,8 @@ export function normalizeTransactionError(
         if (Array.isArray(resultCodes.operations)) {
           operationResultCodes = resultCodes.operations as string[];
           operationCode = operationResultCodes[0];
+          // Prefer the more specific operation-level code when present.
+          if (operationCode) stellarCode = operationCode;
         }
       }
     }

@@ -1,7 +1,14 @@
 ﻿import type { BudgetHistoryEntry, BudgetPeriod } from '@astroid/types';
 
 export interface RollingWindowOptions {
-  period: BudgetPeriod | 'rolling_1d' | 'rolling_7d' | 'rolling_30d' | 'daily' | 'weekly' | 'monthly';
+  period:
+    | BudgetPeriod
+    | 'rolling_1d'
+    | 'rolling_7d'
+    | 'rolling_30d'
+    | 'daily'
+    | 'weekly'
+    | 'monthly';
   limit: number | string;
   evaluationTime?: Date | string | number;
   warningThresholdPercent?: number; // default 80%
@@ -20,7 +27,7 @@ export interface RollingWindowCalculationResult {
 
 export function getRollingWindowBounds(
   period: RollingWindowOptions['period'],
-  evalTime: Date = new Date()
+  evalTime: Date = new Date(),
 ): { start: Date; end: Date } {
   const end = new Date(evalTime.getTime());
   const start = new Date(evalTime.getTime());
@@ -48,13 +55,12 @@ export function getRollingWindowBounds(
 
 export function calculateRollingWindowBudget(
   history: BudgetHistoryEntry[] | null | undefined,
-  options: RollingWindowOptions
+  options: RollingWindowOptions,
 ): RollingWindowCalculationResult {
-  const evalDate = options.evaluationTime
-    ? new Date(options.evaluationTime)
-    : new Date();
+  const evalDate = options.evaluationTime ? new Date(options.evaluationTime) : new Date();
 
-  const totalLimit = typeof options.limit === 'string' ? parseFloat(options.limit) || 0 : options.limit;
+  const totalLimit =
+    typeof options.limit === 'string' ? parseFloat(options.limit) || 0 : options.limit;
   const warningPercent = options.warningThresholdPercent ?? 80;
 
   const { start, end } = getRollingWindowBounds(options.period, evalDate);

@@ -90,11 +90,7 @@ function parseDecimal(value: string | number): Decimal {
 /** Align two `Decimal` values to the same scale and return their BigInt numerators. */
 function alignDecimals(a: Decimal, b: Decimal): [bigint, bigint, number] {
   const scale = Math.max(a.scale, b.scale);
-  return [
-    a.n * 10n ** BigInt(scale - a.scale),
-    b.n * 10n ** BigInt(scale - b.scale),
-    scale,
-  ];
+  return [a.n * 10n ** BigInt(scale - a.scale), b.n * 10n ** BigInt(scale - b.scale), scale];
 }
 
 /** Add two decimal strings, returning a decimal string. */
@@ -128,10 +124,7 @@ function formatDecimal(value: Decimal): string {
 /* -------------------------------------------------------------------------- */
 
 /** Terminal success statuses. */
-const SUCCESS_STATUSES: ReadonlySet<TransactionStatus> = new Set([
-  'COMPLETED',
-  'CONFIRMED',
-]);
+const SUCCESS_STATUSES: ReadonlySet<TransactionStatus> = new Set(['COMPLETED', 'CONFIRMED']);
 
 /** Terminal failure statuses. */
 const FAILURE_STATUSES: ReadonlySet<TransactionStatus> = new Set([
@@ -303,9 +296,7 @@ export function aggregateTransactionMetrics(
     for (const ms of acc.latenciesMs) allLatencies.push(ms);
   }
   const globalAvgLatency =
-    allLatencies.length > 0
-      ? allLatencies.reduce((sum, v) => sum + v, 0) / allLatencies.length
-      : 0;
+    allLatencies.length > 0 ? allLatencies.reduce((sum, v) => sum + v, 0) / allLatencies.length : 0;
 
   return {
     granularity,

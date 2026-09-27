@@ -101,9 +101,13 @@ export interface RetryMiddlewareOptions extends Partial<RetryConfig> {
  */
 export function createRetryMiddleware(options: RetryMiddlewareOptions = {}): Middleware {
   const retryConfig: RetryConfig = {
-    maxRetries: options.maxRetries ?? 2,
+    maxRetries: options.maxRetries ?? 3,
     baseDelayMs: options.baseDelayMs ?? 250,
     maxDelayMs: options.maxDelayMs ?? 8000,
+    ...(options.backoffFactor !== undefined ? { backoffFactor: options.backoffFactor } : {}),
+    ...(options.retryableStatusCodes !== undefined
+      ? { retryableStatusCodes: options.retryableStatusCodes }
+      : {}),
   };
 
   return {

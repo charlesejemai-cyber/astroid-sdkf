@@ -43,16 +43,17 @@ export function evaluateSignerThreshold(
   signers: Signer[],
   activeSignerKeys: string[],
   thresholdKey: 'low' | 'medium' | 'high',
-  thresholds: Thresholds
+  thresholds: Thresholds,
 ): boolean {
-  return evaluateSignerThresholdWithDetails(signers, activeSignerKeys, thresholdKey, thresholds).passed;
+  return evaluateSignerThresholdWithDetails(signers, activeSignerKeys, thresholdKey, thresholds)
+    .passed;
 }
 
 export function evaluateSignerThresholdWithDetails(
   signers: Signer[],
   activeSignerKeys: string[],
   thresholdKey: 'low' | 'medium' | 'high',
-  thresholds: Thresholds
+  thresholds: Thresholds,
 ): ThresholdEvaluationResult {
   if (!Array.isArray(signers) || !Array.isArray(activeSignerKeys) || !thresholds) {
     return {
@@ -67,8 +68,8 @@ export function evaluateSignerThresholdWithDetails(
     thresholdKey === 'low'
       ? thresholds.lowThreshold
       : thresholdKey === 'medium'
-      ? thresholds.medThreshold
-      : thresholds.highThreshold;
+        ? thresholds.medThreshold
+        : thresholds.highThreshold;
 
   // Deduplicate active signer keys to prevent double-counting
   const uniqueActiveKeys = new Set(activeSignerKeys);
@@ -94,7 +95,7 @@ export function evaluateSignerThresholdWithDetails(
 }
 
 export function buildSetOptionsThresholdOp(
-  options: SetOptionsThresholdOptions
+  options: SetOptionsThresholdOptions,
 ): SetOptionsThresholdOp {
   const op: SetOptionsThresholdOp = {
     type: 'setOptions',

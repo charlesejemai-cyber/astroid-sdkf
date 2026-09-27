@@ -2,15 +2,16 @@
  * Base class shared by every SDK resource namespace (`wallets`, `agents`, …).
  *
  * It holds the `HttpClient` and offers small helpers so resource methods stay
- * declarative: unwrap `data`, build a paginated list, and expose an
- * auto-iterator. Resources never touch fetch/headers/retries directly.
+ * declarative: unwrap `data`, build a paginated list, and expose auto-iterators
+ * for both page-number and cursor (keyset) pagination. Resources never touch
+ * fetch/headers/retries directly.
  */
 
 import type { Paginated, PaginationMeta } from '@astroid/types';
 
 import type { HttpClient } from './http-client.js';
 import type { AstroidResponse, QueryValue, RequestOptions } from './http-types.js';
-import { paginate } from './pagination.js';
+import { paginate, paginateCursor } from './pagination.js';
 
 /** Options a list method accepts beyond its typed filters. */
 export type ListRequestOptions = Omit<RequestOptions, 'method' | 'path' | 'body'>;
@@ -31,7 +32,10 @@ export abstract class Resource {
     query?: Record<string, QueryValue>,
     extras?: RequestOptionsExtras,
   ): Promise<TData> {
-    const res = await this.client.get<TData>(path, { ...(extras ?? {}), ...(query ? { query } : {}) });
+    const res = await this.client.get<TData>(path, {
+      ...(extras ?? {}),
+      ...(query ? { query } : {}),
+    });
     return res.data;
   }
 
@@ -41,10 +45,10 @@ export abstract class Resource {
     query?: Record<string, QueryValue>,
     extras?: RequestOptionsExtras,
   ): Promise<Paginated<TItem>> {
-    const res: AstroidResponse<TItem[]> = await this.client.get<TItem[]>(
-      path,
-      { ...(extras ?? {}), ...(query ? { query } : {}) },
-    );
+    const res: AstroidResponse<TItem[]> = await this.client.get<TItem[]>(path, {
+      ...(extras ?? {}),
+      ...(query ? { query } : {}),
+    });
     return { data: res.data ?? [], meta: normalizeMeta(res) };
   }
 
@@ -62,6 +66,40 @@ export abstract class Resource {
     return paginate<TItem>((page) =>
       this.client.get<TItem[]>(path, { ...(extras ?? {}), query: { ...(query ?? {}), page } }),
     );
+  }
+
+  /**
+   * An async iterator over every item across all pages of a cursor-paginated
+   * (keyset) list endpoint, following the opaque `meta.nextCursor` the API
+   * returns in each response.
+   *
+   * Only one page is held in memory at a time and the next page is requested
+   * lazily as the consumer advances the generator. Iteration stops as soon as
+   * the API stops handing out a new cursor, so callers never manage cursors by
+   * hand. An initial `cursor` passed in `query` resumes iteration from a
+   * previously captured position.
+   *
+   * @param path   Resource path, e.g. `/wallets`.
+   * @param query  Typed filters; may include a starting `cursor` to resume from.
+   * @param extras Extra request options forwarded to the HTTP client.
+   *
+   * @example
+   * for await (const wallet of client.wallets.iterateByCursor()) { ... }
+   */
+  protected iterateCursorData<TItem>(
+    path: string,
+    query?: Record<string, QueryValue>,
+    extras?: RequestOptionsExtras,
+  ): AsyncGenerator<TItem, void, void> {
+    return paginateCursor<TItem>((cursor) => {
+      const merged: Record<string, QueryValue> = { ...(query ?? {}) };
+      if (cursor !== undefined) merged['cursor'] = cursor;
+      const hasQuery = Object.keys(merged).length > 0;
+      return this.client.get<TItem[]>(path, {
+        ...(extras ?? {}),
+        ...(hasQuery ? { query: merged } : {}),
+      });
+    });
   }
 }
 

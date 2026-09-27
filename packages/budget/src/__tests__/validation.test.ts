@@ -150,11 +150,7 @@ describe('checkBudgetLimit', () => {
       const budget = makeBudget({ currency: `USDC:${issuer}`, limitAmount: '200' });
       const history = [makeEntry({ amount: '50' })];
 
-      const result = checkBudgetLimit(
-        budget,
-        history,
-        request(`USDC:${issuer}`, '100'),
-      );
+      const result = checkBudgetLimit(budget, history, request(`USDC:${issuer}`, '100'));
 
       expect(result.allowed).toBe(true);
       expect(result.spent).toBe('50');
@@ -193,7 +189,11 @@ describe('checkBudgetLimit', () => {
         createdAt: '2025-06-14T12:00:00.000Z',
       });
 
-      const result = checkBudgetLimit(budget, [insideWindow, outsideWindow], request(USD_ASSET, '50'));
+      const result = checkBudgetLimit(
+        budget,
+        [insideWindow, outsideWindow],
+        request(USD_ASSET, '50'),
+      );
 
       expect(result.spent).toBe('40');
       expect(result.remaining).toBe('60');
@@ -376,11 +376,7 @@ describe('checkBudgetLimit', () => {
       const budget = makeBudget({ limitAmount: '999999999999999999.99' });
       const history = [makeEntry({ amount: '1' })];
 
-      const result = checkBudgetLimit(
-        budget,
-        history,
-        request(USD_ASSET, '999999999999999998.99'),
-      );
+      const result = checkBudgetLimit(budget, history, request(USD_ASSET, '999999999999999998.99'));
 
       expect(result.allowed).toBe(true);
       expect(result.violated).toBe(false);

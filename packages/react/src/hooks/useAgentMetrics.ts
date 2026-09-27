@@ -43,7 +43,7 @@ interface AgentQueryPayload {
  */
 export function useAgentMetrics(
   agentId: string,
-  options: UseAgentMetricsOptions = {}
+  options: UseAgentMetricsOptions = {},
 ): UseAgentMetricsResult {
   const astroid = useAstroid();
   const { pollingInterval, enabled = true } = options;
@@ -54,7 +54,9 @@ export function useAgentMetrics(
       if (!agentId) return null;
       const [agent, budgetsRes, analytics] = await Promise.all([
         astroid.agents.get(agentId).catch(() => null),
-        astroid.budgets.list({ agentId }).catch(() => ({ data: [] } as unknown as Paginated<Budget>)),
+        astroid.budgets
+          .list({ agentId })
+          .catch(() => ({ data: [] }) as unknown as Paginated<Budget>),
         astroid.analytics.overview({ agentId }).catch(() => null),
       ]);
       return { agent, budgets: budgetsRes?.data ?? [], analytics };

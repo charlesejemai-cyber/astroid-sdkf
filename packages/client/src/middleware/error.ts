@@ -10,11 +10,13 @@
  * 1. **HTTP status is inspected first** (e.g. `402`, `403`, `409`) as a fast
  *    path, but the decisive mapping comes from the response body.
  * 2. **Horizon result codes** — the Horizon server reports failures in
- *    `extras.result_codes` (`transaction` / `operations`). Codes such as
- *    `op_underfunded` and `op_low_reserve` are translated to
- *    {@link InsufficientFundsError} (also exported as
- *    `AstroidInsufficientFundsError` for docs parity). Other horizon codes are
- *    mapped to the closest domain error (`NotFoundError`, `ConflictError`, …).
+ *    `extras.result_codes` (`transaction` / `operations`). Mapping is delegated
+ *    to the centralized Stellar module in `@astroid/errors` (issue #253):
+ *    `op_underfunded` / `op_low_reserve` / `tx_insufficient_balance` become
+ *    `InsufficientBalanceError` (also surfaced as {@link InsufficientFundsError}
+ *    for docs parity), `tx_bad_seq` becomes `SequenceConflictError`,
+ *    `op_bad_auth` becomes `StellarAuthError`, and so on. Unmapped codes keep
+ *    the generic `StellarHorizonError` path.
  * 3. **Astroid API error envelope** — when the body contains
  *    `{ error: { code, message, details } }`, the `code` (e.g.
  *    `POLICY_VIOLATION`, `BUDGET_EXCEEDED`, `INSUFFICIENT_FUNDS`) is mapped via
@@ -44,6 +46,7 @@ import {
   AstroidError,
   AuthenticationError,
   AuthorizationError,
+  ForbiddenError,
   ValidationError,
   NotFoundError,
   ConflictError,
@@ -52,8 +55,11 @@ import {
   BudgetExceededError,
   ApprovalRequiredError,
   RateLimitError,
+  InternalServerError,
   ServerError,
   errorClassForCode,
+  mapStellarError,
+  StellarNetworkError,
 } from '@astroid/errors';
 import { isRetryableStatus } from '@astroid/core';
 import type { Middleware, RawResponse, PreparedRequest } from '@astroid/core';
@@ -65,6 +71,7 @@ export {
   AstroidError,
   AuthenticationError,
   AuthorizationError,
+  ForbiddenError,
   ValidationError,
   NotFoundError,
   ConflictError,
@@ -73,6 +80,7 @@ export {
   BudgetExceededError,
   ApprovalRequiredError,
   RateLimitError,
+  InternalServerError,
   ServerError,
   StellarHorizonError,
 };
@@ -103,25 +111,11 @@ const HORIZON_DOMAIN_MAP: Record<string, typeof AstroidError> = {
   op_line_full: ValidationError,
   // Auth
   op_bad_auth: AuthenticationError,
-  op_unauthorized: AuthorizationError,
+  op_unauthorized: ForbiddenError,
   tx_bad_auth: AuthenticationError,
   // Sequence / conflict
   tx_bad_seq: ConflictError,
   tx_too_late: ValidationError,
-};
-
-const HORIZON_STATUS_MAP: Record<string, number> = {
-  op_underfunded: 402,
-  op_low_reserve: 402,
-  tx_insufficient_balance: 402,
-  op_no_destination: 404,
-  op_no_trust: 422,
-  op_unauthorized: 403,
-  op_bad_auth: 401,
-  tx_bad_seq: 409,
-  tx_bad_auth: 401,
-  tx_too_late: 410,
-  tx_insufficient_fee: 402,
 };
 
 // ---------------------------------------------------------------------------
@@ -222,24 +216,23 @@ export function translateErrorBody(
   body: unknown,
   requestId?: string,
 ): AstroidError | undefined {
-  // 1. Stellar Horizon result codes — highest fidelity for transaction failures
+  // 1. Stellar Horizon result codes — highest fidelity for transaction failures.
+  //    Delegates to the centralized Stellar mapping in @astroid/errors
+  //    (issue #253), which resolves the domain class, REST-style status, and
+  //    diagnostic details for every known result code.
   const stellar = detectStellarCode(body);
   if (stellar) {
-    const DomainError = HORIZON_DOMAIN_MAP[stellar.stellarCode];
-    if (DomainError) {
-      const message = extractMessage(body) ?? `Stellar transaction failed: ${stellar.stellarCode}`;
-      const details = extractDetails(body);
-      const statusForCode = HORIZON_STATUS_MAP[stellar.stellarCode] ?? status;
-      return new DomainError(message, {
-        code: stellar.stellarCode,
-        status: statusForCode,
-        requestId,
-        details: details
-          ? { ...details, stellarCode: stellar.stellarCode, operationCode: stellar.operationCode }
-          : { stellarCode: stellar.stellarCode, operationCode: stellar.operationCode },
-      });
+    const mapped = mapStellarError(body, {
+      status,
+      requestId,
+      message: extractMessage(body),
+      details: extractDetails(body),
+    });
+    // Unmapped codes return a generic StellarNetworkError; preserve the legacy
+    // contract of letting the generic StellarHorizonError path handle those.
+    if (!(mapped instanceof StellarNetworkError)) {
+      return mapped;
     }
-    // No domain mapping — let the generic StellarHorizonError path handle it (via HttpClient)
     return undefined;
   }
 
@@ -299,7 +292,7 @@ export function translateErrorBody(
  *
  * The middleware deliberately **does not** intercept `401` (which is handled by
  * the session refresh / dynamic token provider) nor retryable statuses
- * (`408`, `429`, `5xx`) so that the `HttpClient`'s built-in retry and refresh
+ * (`429`, `5xx`) so that the `HttpClient`'s built-in retry and refresh
  * loops retain full control. Those cases are instead refined in `onError`
  * after retries are exhausted.
  *
@@ -318,7 +311,8 @@ export function createErrorTranslatorMiddleware(): Middleware {
       // No translation — pass through to HttpClient's default handling
     },
     async onError(error: unknown, _req: PreparedRequest) {
-      // Remap generic StellarHorizonError to domain errors
+      // Remap generic StellarHorizonError to domain errors using the
+      // centralized Stellar mapping (issue #253).
       if (error instanceof StellarHorizonError) {
         const DomainError = HORIZON_DOMAIN_MAP[error.stellarCode];
         if (DomainError) {
@@ -329,6 +323,21 @@ export function createErrorTranslatorMiddleware(): Middleware {
             details: error.details,
             cause: (error as unknown as { cause?: unknown }).cause,
           });
+        }
+        // No local mapping — refine into the centralized Stellar domain error
+        // (e.g. InsufficientBalanceError, SequenceConflictError) when one applies.
+        const refined = mapStellarError(
+          { result_code: error.stellarCode },
+          {
+            status: error.status,
+            requestId: error.requestId,
+            message: error.message,
+            details: error.details,
+            cause: (error as unknown as { cause?: unknown }).cause,
+          },
+        );
+        if (!(refined instanceof StellarNetworkError)) {
+          throw refined;
         }
       }
       // Refine generic AstroidError with a mappable code (e.g., a fallback AstroidError for INSUFFICIENT_FUNDS)

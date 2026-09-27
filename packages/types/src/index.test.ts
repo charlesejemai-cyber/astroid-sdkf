@@ -33,6 +33,8 @@ describe('@astroid/types', () => {
   });
 
   it('narrows webhook event data by event name at the type level', () => {
-    expectTypeOf<WebhookEventEnvelope<'transaction.completed'>['data']>().toEqualTypeOf<Transaction>();
+    expectTypeOf<
+      WebhookEventEnvelope<'transaction.completed'>['data']
+    >().toEqualTypeOf<Transaction>();
   });
 });

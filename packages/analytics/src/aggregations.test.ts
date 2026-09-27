@@ -49,9 +49,21 @@ describe('aggregateTransactionMetrics', () => {
   describe('daily granularity (default)', () => {
     it('groups transactions into daily UTC buckets', () => {
       const txns = [
-        makeTx({ amount: '50', createdAt: '2026-03-10T08:00:00.000Z', updatedAt: '2026-03-10T08:00:02.000Z' }),
-        makeTx({ amount: '30', createdAt: '2026-03-10T15:00:00.000Z', updatedAt: '2026-03-10T15:00:01.000Z' }),
-        makeTx({ amount: '20', createdAt: '2026-03-11T02:00:00.000Z', updatedAt: '2026-03-11T02:00:03.000Z' }),
+        makeTx({
+          amount: '50',
+          createdAt: '2026-03-10T08:00:00.000Z',
+          updatedAt: '2026-03-10T08:00:02.000Z',
+        }),
+        makeTx({
+          amount: '30',
+          createdAt: '2026-03-10T15:00:00.000Z',
+          updatedAt: '2026-03-10T15:00:01.000Z',
+        }),
+        makeTx({
+          amount: '20',
+          createdAt: '2026-03-11T02:00:00.000Z',
+          updatedAt: '2026-03-11T02:00:03.000Z',
+        }),
       ];
 
       const result = aggregateTransactionMetrics(txns);

@@ -179,10 +179,7 @@ function addYears(d: Date, n: number): Date {
  * Boundaries are always normalised to 00:00 UTC for day-level alignment
  * so that cross-midnight scenarios behave correctly.
  */
-function getWindow(
-  period: BudgetPeriod,
-  periodStart: IsoDateTime,
-): { start: Date; end: Date } {
+function getWindow(period: BudgetPeriod, periodStart: IsoDateTime): { start: Date; end: Date } {
   const ps = new Date(periodStart);
 
   switch (period) {
@@ -204,9 +201,7 @@ function getWindow(
     }
 
     case 'MONTHLY': {
-      const monthStart = new Date(
-        Date.UTC(ps.getUTCFullYear(), ps.getUTCMonth(), 1),
-      );
+      const monthStart = new Date(Date.UTC(ps.getUTCFullYear(), ps.getUTCMonth(), 1));
       return { start: monthStart, end: addMonths(monthStart, 1) };
     }
 
@@ -273,10 +268,7 @@ export function checkBudgetLimit(
   const requestAmount = normaliseAmount(request.amount);
 
   // 1. Compute the active window
-  const { start: windowStart, end: windowEnd } = getWindow(
-    budget.period,
-    budget.periodStart,
-  );
+  const { start: windowStart, end: windowEnd } = getWindow(budget.period, budget.periodStart);
 
   // 2. Filter history to entries within the active window
   const activeEntries = spentHistory.filter((entry) => {
@@ -294,8 +286,7 @@ export function checkBudgetLimit(
   const wouldExceed = decGtZero(requestAmount) && decCmp(requestAmount, remaining) === 1;
 
   // 6. Asset mismatch: budget doesn't apply to this asset
-  const assetMismatch =
-    request.asset.trim().toUpperCase() !== budget.currency.trim().toUpperCase();
+  const assetMismatch = request.asset.trim().toUpperCase() !== budget.currency.trim().toUpperCase();
 
   if (!budget.enabled || assetMismatch) {
     return {

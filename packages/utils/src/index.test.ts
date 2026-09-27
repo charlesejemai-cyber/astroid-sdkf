@@ -69,7 +69,9 @@ describe('validation', () => {
   });
 
   it('collects transfer validation issues', () => {
-    expect(validateTransfer({ recipientAddress: VALID_ADDRESS, asset: 'USDC', amount: 5 })).toEqual([]);
+    expect(validateTransfer({ recipientAddress: VALID_ADDRESS, asset: 'USDC', amount: 5 })).toEqual(
+      [],
+    );
     const issues = validateTransfer({ recipientAddress: 'bad', asset: 'BAD CODE', amount: -1 });
     expect(issues.map((i) => i.field)).toEqual(['recipientAddress', 'asset', 'amount']);
   });

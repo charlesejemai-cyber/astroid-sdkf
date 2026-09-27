@@ -22,6 +22,7 @@ import { Command } from 'commander';
 import { Astroid } from '@astroid/client';
 import { isAstroidError } from '@astroid/errors';
 import type { AstroidClientConfig } from '@astroid/core';
+import type { AgentRole, AgentStatus } from '@astroid/types';
 
 /* -------------------------------------------------------------------------- */
 /*                                config store                                */
@@ -116,9 +117,7 @@ export function resolveCredentials(flags: GlobalFlags): ResolvedCredentials {
 export function createClient(flags: GlobalFlags): Astroid {
   const creds = resolveCredentials(flags);
   if (!creds.apiKey && !creds.accessToken) {
-    fail(
-      'Not authenticated. Run `astroid login`, set ASTROID_API_KEY, or pass --api-key.',
-    );
+    fail('Not authenticated. Run `astroid login`, set ASTROID_API_KEY, or pass --api-key.');
   }
   const config: AstroidClientConfig = {};
   if (creds.apiKey) config.apiKey = creds.apiKey;
@@ -303,8 +302,8 @@ function registerAgentCommands(program: Command): void {
       await run(async () => {
         const astroid = createClient(command.optsWithGlobals() as GlobalFlags);
         const page = await astroid.agents.list({
-          ...(opts.status ? { status: opts.status as never } : {}),
-          ...(opts.role ? { role: opts.role } : {}),
+          ...(opts.status ? { status: opts.status as AgentStatus } : {}),
+          ...(opts.role ? { role: opts.role as AgentRole } : {}),
         });
         print(command, page);
       });
@@ -326,17 +325,40 @@ function registerAgentCommands(program: Command): void {
     .requiredOption('-n, --name <name>', 'Agent name')
     .option('-d, --description <text>', 'Description')
     .option('--role <role>', 'Agent role')
+    .option('-c, --capabilities <list>', 'Comma-separated capability list (e.g. "trade,transfer")')
+    .option('-b, --budget <currency:amount>', 'Initial budget (e.g. "USDC:100")')
     .action(
       async (
-        opts: { name: string; description?: string; role?: string },
+        opts: {
+          name: string;
+          description?: string;
+          role?: string;
+          capabilities?: string;
+          budget?: string;
+        },
         command: Command,
       ) => {
         await run(async () => {
           const astroid = createClient(command.optsWithGlobals() as GlobalFlags);
+          const capabilities = opts.capabilities
+            ? opts.capabilities
+                .split(',')
+                .map((c) => c.trim())
+                .filter((c) => c.length > 0)
+            : [];
+          if (capabilities.length === 0) {
+            fail('--capabilities is required (comma-separated, e.g. "trade,transfer").');
+          }
+          const [currency, amount] = (opts.budget ?? '').split(':');
+          if (!currency || !amount) {
+            fail('--budget is required as <currency:amount>, e.g. "USDC:100".');
+          }
           const agent = await astroid.agents.create({
             name: opts.name,
+            capabilities,
+            initialBudget: { currency, amount },
             ...(opts.description ? { description: opts.description } : {}),
-            ...(opts.role ? { role: opts.role as never } : {}),
+            ...(opts.role ? { role: opts.role as AgentRole } : {}),
           });
           print(command, agent);
         });
@@ -410,9 +432,7 @@ function registerPolicyCommands(program: Command): void {
     .action(async (opts: { enabled?: boolean }, command: Command) => {
       await run(async () => {
         const astroid = createClient(command.optsWithGlobals() as GlobalFlags);
-        const page = await astroid.policies.list(
-          opts.enabled ? { enabled: true } : {},
-        );
+        const page = await astroid.policies.list(opts.enabled ? { enabled: true } : {});
         print(command, page);
       });
     });
@@ -448,9 +468,13 @@ function registerUtilityCommands(program: Command): void {
       const flags = command.optsWithGlobals() as GlobalFlags;
       const creds = resolveCredentials(flags);
       const lines: string[] = [];
-      lines.push(`config file : ${configPath()} ${existsSync(configPath()) ? '(present)' : '(absent)'}`);
+      lines.push(
+        `config file : ${configPath()} ${existsSync(configPath()) ? '(present)' : '(absent)'}`,
+      );
       lines.push(`base URL    : ${creds.baseUrl ?? 'https://api.astroid.finance (default)'}`);
-      lines.push(`credential  : ${creds.apiKey ? 'api key' : creds.accessToken ? 'access token' : 'none'} (source: ${creds.source})`);
+      lines.push(
+        `credential  : ${creds.apiKey ? 'api key' : creds.accessToken ? 'access token' : 'none'} (source: ${creds.source})`,
+      );
       lines.push(`SDK version : ${Astroid.version}`);
 
       if (!creds.apiKey && !creds.accessToken) {

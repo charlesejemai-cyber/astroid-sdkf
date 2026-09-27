@@ -62,9 +62,12 @@ export function assertValidThresholdPercent(percent: number): void {
 function validateCreateInput(input: CreateBudgetAlertInput): void {
   assertValidThresholdPercent(input.thresholdPercent);
   if (!isValidBudgetAlertChannel(input.channel)) {
-    throw new BudgetAlertValidationError(`Unknown budget alert channel "${String(input.channel)}".`, {
-      channel: input.channel,
-    });
+    throw new BudgetAlertValidationError(
+      `Unknown budget alert channel "${String(input.channel)}".`,
+      {
+        channel: input.channel,
+      },
+    );
   }
   if (
     (TARGETED_CHANNELS as readonly string[]).includes(input.channel) &&
@@ -135,9 +138,12 @@ export async function updateBudgetAlert(
     assertValidThresholdPercent(input.thresholdPercent);
   }
   if (input.channel !== undefined && !isValidBudgetAlertChannel(input.channel)) {
-    throw new BudgetAlertValidationError(`Unknown budget alert channel "${String(input.channel)}".`, {
-      channel: input.channel,
-    });
+    throw new BudgetAlertValidationError(
+      `Unknown budget alert channel "${String(input.channel)}".`,
+      {
+        channel: input.channel,
+      },
+    );
   }
   return http.patch<BudgetAlert>(alertPath(budgetId, alertId), input);
 }

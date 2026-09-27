@@ -373,7 +373,10 @@ function memoToJson(memo: Memo): TransactionMemoJson {
       return { type: 'text', value: text };
     }
     case 'id':
-      return { type: 'id', value: typeof memo.value === 'string' ? memo.value : String(memo.value) };
+      return {
+        type: 'id',
+        value: typeof memo.value === 'string' ? memo.value : String(memo.value),
+      };
     case 'hash':
     case 'return': {
       const v = memo.value;
@@ -409,7 +412,9 @@ function jsonFromTransaction(tx: Transaction): TransactionJson {
 export type TransactionEnvelopeInput = string | TransactionJson;
 
 /** An empty report used when the input can't be inspected at all. */
-function emptyNormalized(overrides: Partial<NormalizedTransactionView> = {}): NormalizedTransactionView {
+function emptyNormalized(
+  overrides: Partial<NormalizedTransactionView> = {},
+): NormalizedTransactionView {
   return {
     source: null,
     fee: null,
@@ -452,8 +457,16 @@ export function validateTransactionEnvelope(
     minBaseFeeStroops: options.minBaseFeeStroops ?? MIN_BASE_FEE_STROOPS,
   };
 
-  if (input === null || input === undefined || (typeof input !== 'string' && typeof input !== 'object')) {
-    sink.add('INVALID_INPUT', 'transaction', 'Input must be an XDR string or a transaction object.');
+  if (
+    input === null ||
+    input === undefined ||
+    (typeof input !== 'string' && typeof input !== 'object')
+  ) {
+    sink.add(
+      'INVALID_INPUT',
+      'transaction',
+      'Input must be an XDR string or a transaction object.',
+    );
     return finalize(issues, emptyNormalized());
   }
 

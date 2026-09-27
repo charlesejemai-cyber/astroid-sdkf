@@ -1,115 +1,166 @@
-# feat: budget resources, transaction validation, and agent DTOs
+# feat(policy,transaction,analytics,auth): policy builder, memo-aware payment builder, time-series analytics & API-key sessions
 
-Implements four tracked issues across `@astroid/types`, `@astroid/transaction`,
-and `@astroid/budget`.
-
-Closes #55
-Closes #51
-Closes #60
-Closes #50
+Closes #225
+Closes #226
+Closes #227
+Closes #228
 
 ---
 
-## #55 — Core types and DTO definitions for agent resource management
+## Overview
 
-- **New `packages/types/src/agent.ts`**
-  - `AgentEntity` (alias of the `Agent` model), `AgentMetadata`, `AgentInitialBudget`
-  - `CreateAgentDto` / `UpdateAgentDto`, with `CreateAgentParams` / `UpdateAgentParams`
-    aliases so `@astroid/agent` and `@astroid/react` compile against one name set
-  - `ListAgentsParams`; `AgentStatus` / `AgentRole` re-exported from `./enums.ts`
-  - Runtime helpers: `isAgentStatus`, `isAgentRole`, `isAgentEntity`,
-    `parseAgentEntity`, `normalizeCreateAgentDto`, `AGENT_STATUS_VALUES`,
-    `AGENT_ROLE_VALUES`
-  - Full TSDoc on every export; strict types, no `any`
-- **New `packages/types/src/agent.test.ts`** — type-level and runtime
-  serialization/guard tests
-- **Fixes that unblocked the package build/typecheck**
-  - `policy.ts` re-declared `Policy` and `PolicyType` (already defined in
-    `entities.ts` / `enums.ts`), which made `export *` ambiguous and failed the
-    DTS build — removed the duplicates, kept the simulation types
-  - `common.ts` was missing exports that the workspace already imports:
-    `ApiErrorCode`, `ApiSuccessResponse` / `ApiErrorResponse` / `ApiResponse`,
-    and the `PaginationMeta` / `Paginated` / `CursorPaginationParams` /
-    `CursorPaginated` shapes
-- **New `packages/types/src/budget.ts`** — allocation + alert types shared with
-  `@astroid/budget` (see #60 / #50)
+This PR lands four related agent-safety and agent-runtime capabilities across the
+SDK. They share a theme — giving autonomous agents **type-safe, validated
+primitives for the money-moving path** — so they are implemented together:
 
-## #51 — Automatic transaction payload validation helpers
+| Package | What changed |
+| --- | --- |
+| `@astroid/policy` | New fluent `PolicyBuilder` + rule validation utilities |
+| `@astroid/transaction` | Payment builder now supports text/hash/return/id memos |
+| `@astroid/analytics` + `@astroid/types` | `getTimeSeriesData` + strongly-typed time-series DTOs |
+| `@astroid/auth` | `SessionManager` now supports API-key **and** JWT auth modes |
 
-- **New `packages/transaction/src/validator.ts`** — pure functions, no network,
-  no signing, input never mutated
-  - `validateTransactionEnvelope(input, options?)` accepts a base64 XDR envelope
-    (including fee-bump envelopes) **or** a `TransactionJson` object and returns a
-    structured `TransactionValidationReport` (`valid`, `issues`, `errors`,
-    `warnings`, `normalized`)
-  - Checks against Astroid protocol requirements: missing / malformed source
-    account, fee below the network minimum, **excessive fee bids**
-    (`MAX_TOTAL_FEE_STROOPS`), operation count bounds, memo type/value
-    (`MEMO_TEXT` ≤ 28 bytes, uint64 `MEMO_ID`, 32-byte `MEMO_HASH` / `MEMO_RETURN`),
-    and time-bounds (inverted window, expired window → warning)
-  - `assertValidTransactionEnvelope()` throws `TransactionEnvelopeValidationError`
-    with the full report attached on `.report`
-  - `sanitizeTransactionJson()` returns a cleaned copy (trimmed source, integer
-    stroop fee, normalized/ truncated memo, zeroed time bounds removed)
-  - Exported from `packages/transaction/src/index.ts`
-- **New `packages/transaction/src/__tests__/validator.test.ts`** — 20 tests
-  covering valid and invalid XDR and JSON payloads
-- **Incidental fixes** to pre-existing `tsc` errors that blocked the package
-  typecheck: `errors.ts` (optional-options / `details` typing), `simulation.ts`
-  (unused import, `FeeBumpTransaction` union), `submit.ts` (unused parameter)
+---
 
-## #60 — Budget resource methods and allocation tracking
+## Issue #225 — Policy condition builder & validation utilities (`@astroid/policy`)
 
-- **New `packages/budget/src/budget.ts`**
-  - `BudgetClient` over a minimal injected `BudgetHttpClient` transport
-    (satisfied by `@astroid/client`; keeps the dependency graph acyclic and makes
-    every method unit-testable with a mock)
-  - `create`, `get`, `list`, `update`, `delete`, `consume`, `metrics`
-  - `history(budgetId, params?)` — cursor **or** offset pagination plus
-    `from` / `to` / `transactionId` / `minAmount` / `maxAmount` filters
-  - `allocationStatus(budgetId, options?)` — fetches the budget and derives a
-    `BudgetAllocationStatus`; `prospectiveSpend` reports `wouldExceed`
-  - Pure helpers: `deriveAllocationStatus`, `classifyAllocation`,
-    `isAllocationExhausted`, `toBudgetQuery`
-- **New `packages/budget/src/__tests__/budget.test.ts`** — 16 tests, mocked HTTP
+New module `packages/policy/src/builder.ts`.
 
-## #50 — Budget threshold alert subscription hooks
+- **`PolicyBuilder`** — a fluent, chainable class for assembling a policy draft:
+  - Destinations: `allowDestination(s)` / `denyDestination(s)`
+  - Assets: `allowAsset(s)` / `denyAsset(s)` (`XLM`, bare codes, `CODE:ISSUER`)
+  - Limits: `maxAmount`, `minAmount`, `dailyLimit`, `weeklyLimit`, `monthlyLimit`
+  - Window/scope: `timeWindow`, `forAgent`, `withPriority`, `enabled`, `ofType`
+  - `build()` returns the exact `PolicyDraft` payload accepted by
+    `PolicyResource.create` and infers the policy `type` from the configured
+    conditions (or `COMPOSITE` when several families are combined).
+- **Validation during construction** — Stellar address format, asset identifiers,
+  positive numeric bounds, and ordered `timeWindow` bounds are checked as the
+  rule is built, throwing structured `ValidationError`s.
+- **Standalone utilities** — `validatePolicyRule` (non-throwing, returns every
+  issue), `assertValidPolicyRule` (throws), and the
+  `isValidPolicyAddress` / `isValidPolicyAsset` predicates.
+- Exported from `packages/policy/src/index.ts` with full TSDoc + usage example.
 
-- **New `packages/budget/src/alerts.ts`**
-  - `createBudgetAlert`, `listBudgetAlerts`, `getBudgetAlert`,
-    `updateBudgetAlert`, `deleteBudgetAlert` (each takes the `BudgetHttpClient`
-    transport)
-  - `BudgetAlertValidationError`, `isValidBudgetAlertChannel`,
-    `assertValidThresholdPercent`, `BUDGET_ALERT_THRESHOLDS` (`[50, 80, 100]`)
-  - Alert config types (`BudgetAlert`, `BudgetAlertChannel`,
-    `CreateBudgetAlertInput`, `UpdateBudgetAlertInput`, `ListBudgetAlertsParams`)
-    live in `@astroid/types` and are re-exported here
-- **New `packages/budget/src/__tests__/alerts.test.ts`** — 13 tests, mocked HTTP
-- `packages/budget/src/index.ts` now re-exports `budget.ts` / `alerts.ts` and
-  resolves a pre-existing duplicate `SpendRequest` export
+**Acceptance criteria**
+- [x] Fluent `PolicyBuilder` with rule chaining for destinations, assets, and
+      velocity limits.
+- [x] Stellar public-key formats and numeric bounds validated at construction.
+- [x] Exported from `@astroid/policy` with TSDoc + usage examples.
+- [x] Unit tests cover serialization and validation-error throwing.
+
+---
+
+## Issue #226 — Memo-aware payment transaction builder (`@astroid/transaction`)
+
+`packages/transaction/src/builder.ts` previously only supported `memoText`.
+`BuildTransactionOptions` now accepts the full memo surface:
+
+- `memoText` (≤28 bytes), `memoHash` / `memoReturn` (32 bytes as 64 hex chars),
+  and `memoId` (uint64).
+- Memo options are mutually exclusive — supplying more than one fails fast with
+  a structured `ValidationError` (`CONFLICTING_MEMO`).
+- New validators `isValidMemoHash` / `assertValidMemoHash` in
+  `packages/transaction/src/validate.ts`.
+- Existing `buildPaymentTransaction` continues to support native XLM and custom
+  issued assets, fee configuration, and recipient address validation.
+
+**Acceptance criteria**
+- [x] `buildPaymentTransaction` supports native XLM and custom issued assets.
+- [x] Memo handling for text, hash, and return (plus id) and fee options.
+- [x] Validation for recipient Stellar addresses and memo values.
+- [x] Unit tests decode the built envelope and assert memo structure + errors.
+
+---
+
+## Issue #227 — Analytics time-series query helpers (`@astroid/analytics`, `@astroid/types`)
+
+- New DTOs in `packages/types/src/analytics.ts`: `TimeSeriesMetric`,
+  `TimeSeriesDataParams`, `TimeSeriesDataPoint`, and `TimeSeriesDataResponse`.
+- New `AnalyticsResource.getTimeSeriesData(query)` in
+  `packages/analytics/src/index.ts`, hitting `/analytics/time-series` and
+  serialising date range, granularity, metric family/ies, and agent/wallet/asset
+  scope filters (undefined fields omitted).
+- `getAgentMetrics` (already present) plus the new method round out the
+  aggregated, strongly-typed metrics API. The new DTOs are re-exported from
+  `@astroid/analytics`.
+
+**Acceptance criteria**
+- [x] `getAgentMetrics` and `getTimeSeriesData` available in `@astroid/analytics`.
+- [x] Query parameters for date ranges, granularity, and metric types.
+- [x] Strongly-typed metric DTOs live in `@astroid/types`.
+- [x] Unit tests mock API responses for several time-series queries.
+
+---
+
+## Issue #228 — JWT & API-key session handlers (`@astroid/auth`)
+
+`packages/auth/src/session.ts` already managed JWT access/refresh tokens. It now
+models the auth strategy explicitly:
+
+- `SessionAuthMode = 'jwt' | 'apiKey'`, inferred from the supplied credentials or
+  set via config.
+- **API-key mode** stores a long-lived key, persists it through the pluggable
+  `TokenStorage`, and injects it via a configurable header (`x-api-key` by
+  default) through `getAuthHeaders` / `applyAuthHeaders`.
+- **JWT mode** keeps automatic expiration detection and queued refresh; the
+  middleware continues to refresh before requests and clear credentials on 401.
+- Clear error handling: `assertAuthenticated` throws structured
+  `AuthenticationError`s (`UNAUTHENTICATED` / `TOKEN_EXPIRED`), and
+  `refreshSession` rejects in API-key mode (`API_KEY_MODE`) since keys don't
+  rotate.
+- `createSessionMiddleware` and `wireSessionToHttpClient` are mode-aware.
+
+**Acceptance criteria**
+- [x] Session manager supports API-key and JWT modes.
+- [x] Token expiration detection and automatic refresh (JWT).
+- [x] Clear errors for unauthenticated / expired sessions.
+- [x] Unit tests verify header injection and session state transitions.
+
+---
+
+## Files changed
+
+**Added**
+- `packages/policy/src/builder.ts`
+- `packages/policy/__tests__/builder.test.ts`
+- `packages/analytics/__tests__/time-series-data.test.ts`
+- `packages/auth/__tests__/api-key-session.test.ts`
+
+**Modified**
+- `packages/policy/src/index.ts`
+- `packages/transaction/src/builder.ts`
+- `packages/transaction/src/validate.ts`
+- `packages/transaction/__tests__/builder.test.ts`
+- `packages/types/src/analytics.ts`
+- `packages/analytics/src/index.ts`
+- `packages/auth/src/session.ts`
 
 ---
 
 ## Validation
 
-| package | `typecheck` | `build` | `test` |
-| --- | --- | --- | --- |
-| `@astroid/types` | pass | pass | 12 / 12 |
-| `@astroid/transaction` | pass | pass | 65 pass, 4 pre-existing failures |
-| `@astroid/budget` | pass | pass | 81 / 81 |
+| package | command | result |
+| --- | --- | --- |
+| workspace | `pnpm build` | pass |
+| workspace | `pnpm typecheck` | 16/16 packages pass |
+| workspace | `pnpm lint` | pass |
+| workspace | `pnpm test` | all packages pass |
+| `@astroid/policy` | `pnpm test` | 4 files / 97 tests pass |
+| `@astroid/transaction` | `pnpm test` | 14 files / 160 tests pass |
+| `@astroid/analytics` | `pnpm test` | 9 files / 106 tests pass |
+| `@astroid/auth` | `pnpm test` | 2 files / 22 tests pass |
 
-The 4 `@astroid/transaction` failures pre-date this branch (`fee-estimation`
-assertions, `error-normalization`, and `submit.test.ts` which resolves
-`@astroid/core`). Verified against a clean tree; this branch net-fixes one
-previously failing `simulation` test.
+---
 
-## Out of scope / known issue
+## Notes / design decisions
 
-`pnpm build` and `pnpm typecheck` at the repo root still fail because
-`@astroid/core` is a partially-merged rewrite: `index.ts` / `resource.ts` /
-`middleware.ts` / `pagination.ts` / `offline-queue.ts` expect a transport layer
-(`QueryValue`, `AstroidResponse`, `RequestOptions`, `PreparedRequest`,
-`RawResponse`, `ErrorPayload`, `Middleware`, `MiddlewareStack`, `SDK_VERSION`,
-`buildUrl`) that `http-types.ts` / `http-client.ts` / `url.ts` do not provide.
-This blocks `client`, `agent`, `wallet`, `policy`, `analytics`, `auth`,
-`webhook`, `notification`, `react`, and `cli`, and needs a dedicated fix.
+- The policy builder stays dependency-free beyond `@astroid/errors`: address and
+  asset checks are format validations, with the backend remaining the source of
+  truth for full checksum verification.
+- Memo options are intentionally mutually exclusive so a transaction can never
+  silently carry two memos.
+- `getTimeSeriesData` reuses the existing `AnalyticsResource` base so no new
+  transport concerns are introduced.
+- API-key sessions deliberately do not expose a refresh cycle; treating a key as
+  unrefreshable surfaces a single, clear error instead of a confusing 401 loop.

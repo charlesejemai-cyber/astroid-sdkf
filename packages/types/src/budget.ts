@@ -1,22 +1,45 @@
 /**
- * Budget allocation-tracking and threshold-alert types.
+ * Budget-related DTOs for simulation and utilization queries.
  *
- * The {@link Budget} entity and {@link BudgetHistoryEntry} / {@link BudgetMetrics}
- * shapes live in `./entities.ts`; this module adds the DTOs and value types used
- * by `@astroid/budget` for allocation status checks and budget threshold alert
- * subscriptions.
+ * These complement the {@link Budget} entity. The budget API lets agents
+ * simulate whether a prospective draw would breach their allocation before
+ * committing to it, and exposes a per-budget utilization snapshot.
  *
  * @module
  */
 
 import type { DecimalString, IsoDateTime } from './entities.js';
+import type { Budget } from './entities.js';
+import type { BudgetPeriod } from './enums.js';
 import type { PaginationParams } from './common.js';
 
-/* -------------------------------------------------------------------------- */
-/* Allocation tracking                                                         */
-/* -------------------------------------------------------------------------- */
+/** A prospective spend draw to simulate against a budget. */
+export interface BudgetSimulationInput {
+  /** Asset identifier (e.g. `"XLM"`, `"USDC"`, `"USDC:G...Issuer"`). */
+  asset: string;
+  /** Amount to draw (decimal string or number). */
+  amount: DecimalString | number;
+}
 
-/** Health of a budget's current allocation. */
+/** The outcome of simulating a draw against a budget (nothing is committed). */
+export interface BudgetSimulationResult {
+  /** The budget the simulation ran against. */
+  budget: Budget;
+  /** Whether the draw is permitted under the budget's rules. */
+  allowed: boolean;
+  /** Whether the draw would breach the budget's remaining allowance. */
+  wouldExceed: boolean;
+  /** Remaining headroom after applying the simulated draw (decimal string). */
+  remainingAfter: DecimalString;
+  /** When `wouldExceed` is true, a human-readable description of the breach. */
+  restriction: string | null;
+  /** The active window start the simulation was evaluated against (ISO-8601 UTC). */
+  windowStart: IsoDateTime;
+  /** The active window end the simulation was evaluated against (ISO-8601 UTC). */
+  windowEnd: IsoDateTime;
+}
+
+/** Health of a budget's current allocation, bucketed by utilisation. */
 export type BudgetAllocationState = 'healthy' | 'warning' | 'critical' | 'exhausted';
 
 /** A point-in-time view of how much of a budget's allocation is consumed. */
@@ -39,12 +62,69 @@ export interface BudgetAllocationStatus {
   wouldExceed?: boolean;
 }
 
+/** A utilization snapshot for a single budget. */
+export interface BudgetUtilization {
+  budgetId: string;
+  period: BudgetPeriod;
+  periodStart: IsoDateTime;
+  periodEnd: IsoDateTime;
+  /** Configured spend limit for the active window (decimal string). */
+  limit: DecimalString;
+  /** Total consumption so far in the active window (decimal string). */
+  spent: DecimalString;
+  /** Headroom left (limit minus spent), as a decimal string. */
+  remaining: DecimalString;
+  /** Fraction consumed (0..1+), useful for progress bars. */
+  utilization: number;
+  /** {@link utilization} as a percentage, `0`–`100`, rounded to 2 dp. */
+  percent: number;
+  /** Bucketed health derived from {@link percent} and the configured thresholds. */
+  state: BudgetAllocationState;
+  /** Whether a prospective spend (when supplied) would push spending past the limit. */
+  wouldExceed?: boolean;
+}
+
 /** Thresholds (percent of limit) that bucket an allocation into a {@link BudgetAllocationState}. */
 export interface BudgetAllocationThresholds {
   /** Percent at which the state becomes `warning`. Default `80`. */
   warnAt?: number;
   /** Percent at which the state becomes `critical`. Default `95`. */
   criticalAt?: number;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Simulation                                                                  */
+/* -------------------------------------------------------------------------- */
+
+/** A prospective spend to simulate against a budget. */
+export interface BudgetSimulationRequest {
+  /** Asset identifier (e.g. `"USDC"`, `"XLM"`). */
+  asset: string;
+  /** Amount to spend (decimal string or number). */
+  amount: DecimalString | number;
+  /** Optional agent the spend is attributed to. */
+  agentId?: string;
+  /** Optional originating transaction. */
+  transactionId?: string;
+}
+
+/** The outcome of a policy/budget check simulation (`simulateBudgetCheck`). */
+export interface BudgetCheckResult {
+  budgetId: string;
+  /** Whether the spend is allowed under the budget's limits. */
+  allowed: boolean;
+  /** Whether the spend would push the budget past its limit. */
+  wouldExceed: boolean;
+  /** Remaining headroom after the simulated spend. */
+  afterRemaining: DecimalString;
+  /** Utilization fraction after the simulated spend, `0`–`1`. */
+  utilizationAfter: number;
+  /** Bucketed health after the simulated spend. */
+  state: BudgetAllocationState;
+  /** Violated rules (empty when `allowed` is true). */
+  violations: string[];
+  /** Human-readable explanation of the outcome. */
+  explanation: string;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -112,6 +192,18 @@ export interface ListBudgetAlertsParams extends PaginationParams {
   /** Only alerts on this channel. */
   channel?: BudgetAlertChannel;
 }
+
+/** Alias for {@link BudgetAlert}. */
+export type BudgetThresholdAlert = BudgetAlert;
+
+/** Alias for {@link CreateBudgetAlertInput}. */
+export type CreateBudgetThresholdAlertInput = CreateBudgetAlertInput;
+
+/** Alias for {@link UpdateBudgetAlertInput}. */
+export type UpdateBudgetThresholdAlertInput = UpdateBudgetAlertInput;
+
+/** Alias for {@link ListBudgetAlertsParams}. */
+export type ListBudgetThresholdAlertsParams = ListBudgetAlertsParams;
 
 /* -------------------------------------------------------------------------- */
 /* Budget history queries                                                      */

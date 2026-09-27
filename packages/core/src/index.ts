@@ -36,7 +36,17 @@ export {
 export { Resource, type ListRequestOptions, type RequestOptionsExtras } from './resource.js';
 export { buildUrl, buildQueryString } from './url.js';
 export { backoffDelay, isRetryableStatus, sleep } from './backoff.js';
-export { paginate, collect, type PageFetcher } from './pagination.js';
+export {
+  paginate,
+  paginateCursor,
+  normalizeCursorPage,
+  collect,
+  MAX_CURSOR_PAGES,
+  type PageFetcher,
+  type CursorPageFetcher,
+  type PaginateCursorOptions,
+  type CursorPage,
+} from './pagination.js';
 export {
   OfflineQueue,
   MemoryQueueStorage,
@@ -54,3 +64,4 @@ export {
   type LogSink,
   type RetryMiddlewareOptions,
 } from './middleware.js';
+export * from './errors.js';

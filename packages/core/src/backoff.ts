@@ -8,6 +8,7 @@ import type { RetryConfig } from './config.js';
  * Compute the delay (ms) before retry `attempt` (1-based) using exponential
  * backoff with full jitter, capped at `maxDelayMs`.
  *
+ * The growth rate is `config.backoffFactor` (default `2`, i.e. doubling).
  * A `random` function is injected so callers/tests stay deterministic; it
  * defaults to `Math.random`.
  */
@@ -16,18 +17,26 @@ export function backoffDelay(
   config: RetryConfig,
   random: () => number = Math.random,
 ): number {
-  const exponential = config.baseDelayMs * 2 ** (attempt - 1);
+  const factor = config.backoffFactor ?? 2;
+  const exponential = config.baseDelayMs * factor ** (attempt - 1);
   const capped = Math.min(exponential, config.maxDelayMs);
   // Full jitter: a random point in [0, capped].
   return Math.floor(random() * capped);
 }
 
-/** HTTP statuses that are safe to retry. */
-const RETRYABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
-
-/** Whether a response status warrants a retry. */
+/**
+ * Whether an HTTP status warrants a retry.
+ *
+ * Only transient server-side conditions are retryable:
+ * - `429 Too Many Requests` — a rate-limit window that will reopen.
+ * - Any `5xx` — the server failed to fulfil an otherwise valid request.
+ *
+ * Every other `4xx` is a client error (bad request, auth, validation, …):
+ * retrying it cannot succeed and only burns the caller's latency budget and
+ * the API's rate limit, so those statuses are never retried.
+ */
 export function isRetryableStatus(status: number): boolean {
-  return RETRYABLE_STATUSES.has(status);
+  return status === 429 || (status >= 500 && status < 600);
 }
 
 /** Sleep for `ms`, resolving early (rejecting) if the signal aborts. */

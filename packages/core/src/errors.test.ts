@@ -8,6 +8,7 @@ import {
   RateLimitError,
   ServerError,
   ValidationError,
+  asAstroidError,
   parseErrorResponse,
   toAstroidError,
 } from './errors.js';
@@ -108,18 +109,18 @@ describe('parseErrorResponse', () => {
 });
 
 /* -------------------------------------------------------------------------- */
-/* toAstroidError                                                             */
+/* asAstroidError                                                             */
 /* -------------------------------------------------------------------------- */
 
-describe('toAstroidError', () => {
+describe('asAstroidError', () => {
   it('returns an existing AstroidError unchanged', () => {
     const original = new AuthenticationError('nope', { code: 'AUTHENTICATION_ERROR' });
-    expect(toAstroidError(original)).toBe(original);
+    expect(asAstroidError(original)).toBe(original);
   });
 
   it('wraps a plain Error as a generic AstroidError preserving the cause', () => {
     const cause = new Error('boom');
-    const err = toAstroidError(cause);
+    const err = asAstroidError(cause);
     expect(err).toBeInstanceOf(AstroidError);
     expect(err.message).toBe('boom');
     expect(err.errorCode).toBe('UNKNOWN_ERROR');
@@ -127,8 +128,35 @@ describe('toAstroidError', () => {
   });
 
   it('wraps a thrown string', () => {
-    const err = toAstroidError('kaboom');
+    const err = asAstroidError('kaboom');
     expect(err.message).toBe('kaboom');
     expect(err).toBeInstanceOf(AstroidError);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Name standardization (issue #240)                                          */
+/* -------------------------------------------------------------------------- */
+
+describe('error helper names', () => {
+  it('toAstroidError is the response factory, not the catch-block coercion', async () => {
+    const err = await toAstroidError(errorResponse(404, 'NOT_FOUND', 'Missing'));
+    expect(err).toBeInstanceOf(NotFoundError);
+    expect(err.errorCode).toBe('NOT_FOUND');
+  });
+
+  it('parseErrorResponse and toAstroidError build equivalent errors', async () => {
+    const build = (r: () => Response) => r();
+    const viaWrapper = await parseErrorResponse(
+      build(() => errorResponse(429, 'RATE_LIMITED', 'Slow down')),
+    );
+    const viaFactory = await toAstroidError(
+      build(() => errorResponse(429, 'RATE_LIMITED', 'Slow down')),
+    );
+
+    expect(viaWrapper.constructor).toBe(viaFactory.constructor);
+    expect(viaWrapper.message).toBe(viaFactory.message);
+    expect(viaWrapper.errorCode).toBe(viaFactory.errorCode);
+    expect(viaWrapper.statusCode).toBe(viaFactory.statusCode);
   });
 });

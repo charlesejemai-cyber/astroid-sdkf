@@ -8,8 +8,15 @@
  */
 
 import { ApiErrorCode, type ApiError } from '@astroid/types';
-export { errorClassForStatus, statusCodeToCode, mapStatusToError, errorFromStatus, extractApiError, type ErrorEnvelopeInput } from './mapper.js';
-import { extractApiError, mapStatusToError } from './mapper.js';
+export {
+  errorClassForStatus,
+  statusCodeToCode,
+  mapStatusToError,
+  errorFromStatus,
+  extractApiError,
+  type ErrorEnvelopeInput,
+} from './mapper.js';
+import { extractApiError, mapStatusToError, statusCodeToCode } from './mapper.js';
 
 export {
   isAstroidError,
@@ -50,20 +57,14 @@ export {
   NetworkError,
   ServerError,
   InternalServerError,
+  errorClassForCode,
 } from './classes.js';
 import {
-  AuthenticationError,
-  ForbiddenError,
   ValidationError,
-  NotFoundError,
-  ConflictError,
   PolicyViolationError,
   InsufficientFundsError,
-  BudgetExceededError,
-  ApprovalRequiredError,
-  RateLimitError,
   NetworkError,
-  InternalServerError,
+  errorClassForCode,
 } from './classes.js';
 
 /** Alias for {@link InsufficientFundsError} — matches the naming used in API docs and client middleware. */
@@ -73,71 +74,14 @@ export const AstroidInsufficientFundsError = InsufficientFundsError;
 export const AstroidPolicyViolationError = PolicyViolationError;
 
 /**
- * Maps an API error code to its concrete error class. Unknown codes fall back to
- * the base `AstroidError`.
- */
-export function errorClassForCode(code: string): typeof AstroidError {
-  switch (code) {
-    case ApiErrorCode.AUTHENTICATION_ERROR:
-    case ApiErrorCode.UNAUTHORIZED:
-    case ApiErrorCode.INVALID_API_KEY:
-    case ApiErrorCode.TOKEN_EXPIRED:
-      return AuthenticationError;
-    case ApiErrorCode.FORBIDDEN:
-      return ForbiddenError;
-    case ApiErrorCode.VALIDATION_ERROR:
-    case ApiErrorCode.BAD_REQUEST:
-      return ValidationError;
-    case ApiErrorCode.NOT_FOUND:
-      return NotFoundError;
-    case ApiErrorCode.CONFLICT:
-      return ConflictError;
-    case ApiErrorCode.POLICY_VIOLATION:
-    case ApiErrorCode.POLICY_REJECTED:
-    case ApiErrorCode.RISK_THRESHOLD_EXCEEDED:
-      return PolicyViolationError;
-    case ApiErrorCode.BUDGET_EXCEEDED:
-      return BudgetExceededError;
-    case ApiErrorCode.INSUFFICIENT_FUNDS:
-    case ApiErrorCode.INSUFFICIENT_BALANCE:
-    case ApiErrorCode.WALLET_FROZEN:
-      return InsufficientFundsError;
-    case ApiErrorCode.APPROVAL_REQUIRED:
-      return ApprovalRequiredError;
-    case ApiErrorCode.RATE_LIMITED:
-      return RateLimitError;
-    case ApiErrorCode.NETWORK_ERROR:
-    case ApiErrorCode.TIMEOUT:
-      return NetworkError;
-    case ApiErrorCode.INTERNAL_ERROR:
-    case ApiErrorCode.SERVICE_UNAVAILABLE:
-      return InternalServerError;
-    default:
-      // Also support direct Horizon codes that may leak as API codes
-      if (
-        code === 'op_underfunded' ||
-        code === 'op_low_reserve' ||
-        code === 'tx_insufficient_balance'
-      ) {
-        return InsufficientFundsError;
-      }
-      return AstroidError;
-  }
-}
-
-/**
  * Infers an error code from an HTTP status when the API did not supply one
  * (e.g. a proxy returned a bare 502).
+ *
+ * Alias of {@link statusCodeToCode} — both spellings resolve to the same
+ * `ApiErrorCode` so the status→code table has exactly one implementation.
  */
 export function codeForStatus(status: number): string {
-  if (status === 401) return ApiErrorCode.AUTHENTICATION_ERROR;
-  if (status === 403) return ApiErrorCode.FORBIDDEN;
-  if (status === 404) return ApiErrorCode.NOT_FOUND;
-  if (status === 409) return ApiErrorCode.CONFLICT;
-  if (status === 422 || status === 400) return ApiErrorCode.VALIDATION_ERROR;
-  if (status === 429) return ApiErrorCode.RATE_LIMITED;
-  if (status >= 500) return ApiErrorCode.INTERNAL_ERROR;
-  return ApiErrorCode.BAD_REQUEST;
+  return statusCodeToCode(status);
 }
 
 /** Fields the SDK knows how to lift out of an API error envelope. */
@@ -179,21 +123,16 @@ export function fromApiError(
 /**
  * Builds a typed error from an HTTP status alone (used when the response body is
  * missing or unparseable).
+ *
+ * Alias of {@link errorFromStatus} — both spellings run the same status→class
+ * mapping so there is a single implementation.
  */
 export function fromStatus(
   status: number,
   message: string,
   context: NormalizeErrorContext = {},
 ): AstroidError {
-  const code = codeForStatus(status);
-  const ErrorClass = errorClassForCode(code);
-  return new ErrorClass(message, {
-    code,
-    status,
-    requestId: context.requestId,
-    details: context.details,
-    cause: context.cause,
-  });
+  return mapStatusToError(status, message, context);
 }
 
 /** Wraps a low-level transport failure as a `NetworkError`. */
@@ -210,13 +149,32 @@ export function toNetworkError(cause: unknown, message = 'Network request failed
  *
  * Returns `undefined` — rather than throwing — for the whole class of hostile
  * inputs: an HTML error page from a reverse proxy, an empty body, a body that
- * has already been consumed (the stream is locked), or a `content-type` that
- * lies about being JSON. Callers then fall back to mapping the HTTP status.
+ * has already been consumed (the stream is locked), a `Response` shim with no
+ * `text()` method, or a `content-type` that lies about being JSON. Callers then
+ * fall back to mapping the HTTP status.
  */
 async function readErrorBody(response: Response): Promise<unknown> {
   try {
+    if (typeof response.text !== 'function') return undefined;
     const text = await response.text();
     return text ? (JSON.parse(text) as unknown) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Read a response header without assuming a fully-formed `Headers` object.
+ *
+ * Hand-rolled `Response` shims (test doubles, non-browser `fetch` polyfills) and
+ * the `RawResponse` shape used by the client middleware may not carry a `Headers`
+ * instance. A missing or non-conforming header is reported as absent so error
+ * construction can never fail for want of a diagnostic.
+ */
+function readHeader(response: Response, name: string): string | undefined {
+  try {
+    const value = response.headers?.get?.(name);
+    return typeof value === 'string' && value !== '' ? value : undefined;
   } catch {
     return undefined;
   }
@@ -266,8 +224,10 @@ function parseRetryAfterHeader(value: string | null): number | undefined {
  * elsewhere (e.g. logged), or when you want to supply a pre-parsed value.
  *
  * Malformed input is expected, not exceptional — an HTML 502 page from a load
- * balancer still produces a correctly-typed `InternalServerError` rather than a
- * `SyntaxError` from `JSON.parse`.
+ * balancer, an empty body, a `Response` shim without `headers`, or an
+ * already-consumed stream all still produce a correctly-typed
+ * `InternalServerError` rather than a `SyntaxError` from `JSON.parse` or a
+ * `TypeError` from a missing header map.
  *
  * @example
  * ```ts
@@ -281,7 +241,7 @@ function parseRetryAfterHeader(value: string | null): number | undefined {
  */
 export async function toAstroidError(response: Response, body?: unknown): Promise<AstroidError> {
   const parsedBody = body === undefined ? await readErrorBody(response) : body;
-  const requestId = response.headers.get('x-request-id') ?? undefined;
+  const requestId = readHeader(response, 'x-request-id');
 
   // A body-supplied `retryAfter` is more precise than the header, so only fill
   // in the header value when the envelope did not already provide one.
@@ -289,7 +249,7 @@ export async function toAstroidError(response: Response, body?: unknown): Promis
   const retryAfter =
     typeof envelopeRetryAfter === 'number'
       ? envelopeRetryAfter
-      : parseRetryAfterHeader(response.headers.get('retry-after'));
+      : parseRetryAfterHeader(readHeader(response, 'retry-after') ?? null);
 
   return mapStatusToError(response.status, undefined, {
     body: parsedBody,

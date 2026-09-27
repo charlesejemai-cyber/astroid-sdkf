@@ -1,13 +1,14 @@
 /**
  * `@astroid/errors` — specialized HTTP/API error classes.
  *
- * Lives in its own module so both the package entrypoint and the Stellar
- * domain-error module (`stellar.ts`) can import the classes without circular
- * imports.
+ * Lives in its own module so both the package entrypoint, the status/code mapper
+ * (`mapper.ts`), and the Stellar domain-error module (`stellar.ts`) can import
+ * the classes without circular imports.
  *
  * @module
  */
 
+import { ApiErrorCode } from '@astroid/types';
 import { AstroidError } from './base.js';
 
 /** 401 — missing/invalid credentials, expired token, or invalid API key. */
@@ -78,3 +79,75 @@ export class InternalServerError extends AstroidError {
 /** Alias for InternalServerError — 5xx server-side failure. */
 export const ServerError = InternalServerError;
 export type ServerError = InternalServerError;
+
+/* -------------------------------------------------------------------------- */
+/* API error code → error class                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Horizon/Stellar result codes that sometimes leak through the API as if they
+ * were Astroid error codes. They describe the same condition as the SDK's
+ * insufficient-funds errors, so they resolve to the same class.
+ */
+const LEAKED_STELLAR_FUNDS_CODES: ReadonlySet<string> = new Set([
+  'op_underfunded',
+  'op_low_reserve',
+  'tx_insufficient_balance',
+]);
+
+/**
+ * Map an API error code to its concrete error class.
+ *
+ * This is the single place where an API error code becomes a class, so the
+ * status-based mapper, the response factory, and the client middleware can never
+ * drift apart on which failure maps to which class.
+ *
+ * Unrecognised codes fall back to the base {@link AstroidError} — the caller
+ * still gets `code` and `status` set, just no specialised class.
+ *
+ * @example
+ * ```ts
+ * errorClassForCode('POLICY_VIOLATION'); // → PolicyViolationError
+ * errorClassForCode('SOMETHING_NEW');    // → AstroidError
+ * ```
+ */
+export function errorClassForCode(code: string): typeof AstroidError {
+  switch (code) {
+    case ApiErrorCode.AUTHENTICATION_ERROR:
+    case ApiErrorCode.UNAUTHORIZED:
+    case ApiErrorCode.INVALID_API_KEY:
+    case ApiErrorCode.TOKEN_EXPIRED:
+      return AuthenticationError;
+    case ApiErrorCode.FORBIDDEN:
+      return ForbiddenError;
+    case ApiErrorCode.VALIDATION_ERROR:
+    case ApiErrorCode.BAD_REQUEST:
+      return ValidationError;
+    case ApiErrorCode.NOT_FOUND:
+      return NotFoundError;
+    case ApiErrorCode.CONFLICT:
+      return ConflictError;
+    case ApiErrorCode.POLICY_VIOLATION:
+    case ApiErrorCode.POLICY_REJECTED:
+    case ApiErrorCode.RISK_THRESHOLD_EXCEEDED:
+      return PolicyViolationError;
+    case ApiErrorCode.BUDGET_EXCEEDED:
+      return BudgetExceededError;
+    case ApiErrorCode.INSUFFICIENT_FUNDS:
+    case ApiErrorCode.INSUFFICIENT_BALANCE:
+    case ApiErrorCode.WALLET_FROZEN:
+      return InsufficientFundsError;
+    case ApiErrorCode.APPROVAL_REQUIRED:
+      return ApprovalRequiredError;
+    case ApiErrorCode.RATE_LIMITED:
+      return RateLimitError;
+    case ApiErrorCode.NETWORK_ERROR:
+    case ApiErrorCode.TIMEOUT:
+      return NetworkError;
+    case ApiErrorCode.INTERNAL_ERROR:
+    case ApiErrorCode.SERVICE_UNAVAILABLE:
+      return InternalServerError;
+    default:
+      return LEAKED_STELLAR_FUNDS_CODES.has(code) ? InsufficientFundsError : AstroidError;
+  }
+}

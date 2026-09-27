@@ -35,18 +35,17 @@
  */
 
 import { ApiErrorCode, type ApiError } from '@astroid/types';
+import { AstroidError, type AstroidErrorOptions } from './base.js';
 import {
-  AstroidError,
   AuthenticationError,
-  ForbiddenError,
-  ValidationError,
-  NotFoundError,
   ConflictError,
-  RateLimitError,
+  ForbiddenError,
   InternalServerError,
+  NotFoundError,
+  RateLimitError,
+  ValidationError,
   errorClassForCode,
-  type AstroidErrorOptions,
-} from './index.js';
+} from './classes.js';
 
 /* -------------------------------------------------------------------------- */
 /* HTTP status → error class                                                   */
@@ -112,43 +111,63 @@ export interface ErrorEnvelopeInput {
 }
 
 /**
- * Extract the `{ code, message, details }` API error from a response body.
- * Understands both the standard envelope (`{ error: { code, message } }`) and
- * a flat top-level shape (`{ code, message }`). Returns `undefined` when no
- * usable envelope is present.
+ * A non-empty, non-whitespace string, or `undefined`.
+ *
+ * Error envelopes are assembled by several different services and proxies, and
+ * a blank `code` or `message` is common in partial responses. Treating a blank
+ * string as "absent" lets the mapping fall through to the HTTP status instead of
+ * producing an error with an empty `code` and no message.
  */
-export function extractApiError(body: unknown): ApiError | undefined {
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined;
+}
+
+/** The `details` sub-object, when it is a plain object. */
+function detailsObject(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  return value as Record<string, unknown>;
+}
+
+/**
+ * Locate the `{ code, message, details }` object in a response body.
+ *
+ * Accepts the standard envelope (`{ error: { code, message, details } }`) and a
+ * flat top-level shape (`{ code, message }`). The resolved `code` is guaranteed
+ * to be a non-empty string; the `message` is resolved separately by
+ * {@link extractMessage} so a response with a valid code but a blank message
+ * still maps to the right class instead of losing the code.
+ */
+function envelopeSource(body: unknown): { code: string; raw: Record<string, unknown> } | undefined {
   if (typeof body !== 'object' || body === null) return undefined;
   const obj = body as Record<string, unknown>;
 
   const errorField = obj.error;
   if (typeof errorField === 'object' && errorField !== null) {
-    const err = errorField as Record<string, unknown>;
-    if (typeof err.code === 'string' && typeof err.message === 'string') {
-      return {
-        code: err.code,
-        message: err.message,
-        details:
-          typeof err.details === 'object' && err.details !== null
-            ? (err.details as Record<string, unknown>)
-            : undefined,
-      };
-    }
+    const nested = errorField as Record<string, unknown>;
+    const code = nonEmptyString(nested.code);
+    if (code !== undefined) return { code, raw: nested };
   }
+  const flatCode = nonEmptyString(obj.code);
+  return flatCode !== undefined ? { code: flatCode, raw: obj } : undefined;
+}
 
-  // Flat shape: { code, message } at the top level
-  if (typeof obj.code === 'string' && typeof obj.message === 'string') {
-    return {
-      code: obj.code,
-      message: obj.message,
-      details:
-        typeof obj.details === 'object' && obj.details !== null
-          ? (obj.details as Record<string, unknown>)
-          : undefined,
-    };
-  }
-
-  return undefined;
+/**
+ * Extract the `{ code, message, details }` API error from a response body.
+ * Understands both the standard envelope (`{ error: { code, message } }`) and
+ * a flat top-level shape (`{ code, message }`). Returns `undefined` when no
+ * usable envelope is present.
+ *
+ * A blank `code` or `message` is treated as absent, so
+ * `{ error: { code: '', message: '' } }` yields `undefined` and the caller maps
+ * from the HTTP status — yielding a real code and message rather than two empty
+ * strings.
+ */
+export function extractApiError(body: unknown): ApiError | undefined {
+  const source = envelopeSource(body);
+  if (!source) return undefined;
+  const message = nonEmptyString(source.raw.message);
+  if (message === undefined) return undefined;
+  return { code: source.code, message, details: detailsObject(source.raw.details) };
 }
 
 /** Best-effort human-readable message extraction from a response body. */
@@ -158,14 +177,15 @@ function extractMessage(body: unknown): string | undefined {
 
   const errorField = obj.error;
   if (typeof errorField === 'object' && errorField !== null) {
-    const msg = (errorField as Record<string, unknown>).message;
-    if (typeof msg === 'string') return msg;
+    const msg = nonEmptyString((errorField as Record<string, unknown>).message);
+    if (msg) return msg;
   }
-  if (typeof obj.message === 'string') return obj.message;
-  if (typeof obj.detail === 'string') return obj.detail;
-  if (typeof obj.title === 'string') return obj.title;
-  if (typeof obj.error === 'string') return obj.error;
-  return undefined;
+  return (
+    nonEmptyString(obj.message) ??
+    nonEmptyString(obj.detail) ??
+    nonEmptyString(obj.title) ??
+    nonEmptyString(obj.error)
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -204,16 +224,19 @@ export function mapStatusToError(
   message?: string,
   context: ErrorEnvelopeInput = {},
 ): AstroidError {
-  const envelope = extractApiError(context.body);
+  // The code and the message are resolved independently: a response carrying a
+  // valid code but a blank message must still map to the right class, and a
+  // response with a message but no code still deserves that message.
+  const source = envelopeSource(context.body);
   const resolvedMessage =
-    message ?? envelope?.message ?? extractMessage(context.body) ?? `Request failed with status ${status}`;
+    message ?? extractMessage(context.body) ?? `Request failed with status ${status}`;
 
   // 1. Body code wins — it is the most specific signal.
-  if (envelope) {
-    const ErrorClass = errorClassForCode(envelope.code);
-    const details = { ...(envelope.details ?? {}), ...(context.details ?? {}) };
+  if (source) {
+    const ErrorClass = errorClassForCode(source.code);
+    const details = { ...detailsObject(source.raw.details), ...context.details };
     return new ErrorClass(resolvedMessage, {
-      code: envelope.code,
+      code: source.code,
       status,
       statusCode: status,
       requestId: context.requestId,

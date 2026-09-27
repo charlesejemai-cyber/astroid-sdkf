@@ -17,8 +17,10 @@ import {
   ValidationError,
   errorClassForCode,
   codeForStatus,
+  statusCodeToCode,
   fromApiError,
   fromStatus,
+  errorFromStatus,
   fromErrorResponse,
   isAstroidError,
 } from './index.js';
@@ -121,6 +123,14 @@ describe('@astroid/errors', () => {
     it('maps unknown client errors to BAD_REQUEST', () => {
       expect(codeForStatus(418)).toBe('BAD_REQUEST');
       expect(codeForStatus(451)).toBe('BAD_REQUEST');
+    });
+
+    it('stays in lockstep with statusCodeToCode for every status', () => {
+      // The two spellings are one implementation; this pins that so the tables
+      // cannot drift apart as statuses are added.
+      for (const status of [200, 400, 401, 403, 404, 409, 418, 422, 429, 451, 500, 502, 503, 599]) {
+        expect(codeForStatus(status)).toBe(statusCodeToCode(status));
+      }
     });
   });
 
@@ -257,6 +267,16 @@ describe('@astroid/errors', () => {
       const err = fromStatus(503, 'Service unavailable');
       expect(err).toBeInstanceOf(InternalServerError);
       expect(err).toBeInstanceOf(ServerError);
+    });
+
+    it('agrees with errorFromStatus, which delegates to the same mapping', () => {
+      for (const status of [400, 401, 403, 404, 409, 422, 429, 500, 503]) {
+        const viaAlias = fromStatus(status, 'msg', { requestId: 'req_1' });
+        const viaCanonical = errorFromStatus(status, 'msg', { requestId: 'req_1' });
+        expect(viaAlias.constructor).toBe(viaCanonical.constructor);
+        expect(viaAlias.code).toBe(viaCanonical.code);
+        expect(viaAlias.statusCode).toBe(viaCanonical.statusCode);
+      }
     });
   });
 

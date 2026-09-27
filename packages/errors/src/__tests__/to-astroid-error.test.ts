@@ -286,6 +286,78 @@ describe('toAstroidError', () => {
       expect(err).toBeInstanceOf(NotFoundError);
       expect(err.status).toBe(404);
     });
+
+    it('never throws for a response-like object with no headers map', async () => {
+      // Hand-rolled `Response` shims and the `RawResponse` shape used by the
+      // client middleware have no `Headers` instance.
+      const err = await toAstroidError({ status: 500 } as unknown as Response);
+
+      expect(err).toBeInstanceOf(InternalServerError);
+      expect(err.code).toBe('INTERNAL_ERROR');
+      expect(err.status).toBe(500);
+      expect(err.requestId).toBeUndefined();
+    });
+
+    it('never throws for a response-like object with no text() method', async () => {
+      const err = await toAstroidError({ status: 404 } as unknown as Response);
+
+      expect(err).toBeInstanceOf(NotFoundError);
+      expect(err.status).toBe(404);
+    });
+
+    it('reads headers from a Headers-like object that is not a Headers instance', async () => {
+      const err = await toAstroidError({
+        status: 429,
+        headers: new Map([['retry-after', '7']]),
+      } as unknown as Response);
+
+      expect(err).toBeInstanceOf(RateLimitError);
+      expect((err as RateLimitError).retryAfter).toBe(7);
+    });
+  });
+
+  /* ---------------------------------------------------------------- */
+  /* Partial / blank envelope fields                                  */
+  /* ---------------------------------------------------------------- */
+
+  describe('treats blank envelope fields as absent', () => {
+    it('derives the class and code from the status when the envelope code is blank', async () => {
+      const err = await toAstroidError(jsonResponse({ error: { code: '', message: '' } }, 403));
+
+      expect(err).toBeInstanceOf(ForbiddenError);
+      expect(err.code).toBe('FORBIDDEN');
+      expect(err.message).toBe('Request failed with status 403');
+    });
+
+    it('keeps the API message while still deriving the code from the status', async () => {
+      const err = await toAstroidError(
+        jsonResponse({ error: { code: '', message: 'Forbidden' } }, 403),
+      );
+
+      expect(err).toBeInstanceOf(ForbiddenError);
+      expect(err.code).toBe('FORBIDDEN');
+      expect(err.message).toBe('Forbidden');
+    });
+
+    it('keeps a valid code when only the message is blank', async () => {
+      const err = await toAstroidError(
+        jsonResponse({ error: { code: 'POLICY_VIOLATION', message: '   ' } }, 400),
+      );
+
+      expect(err).toBeInstanceOf(PolicyViolationError);
+      expect(err.code).toBe('POLICY_VIOLATION');
+      expect(err.message).toBe('Request failed with status 400');
+    });
+
+    it('falls through a blank nested envelope to a flat top-level one', async () => {
+      const err = await toAstroidError(
+        jsonResponse({ error: { code: '' }, code: 'CONFLICT', message: 'dup' }, 409),
+      );
+
+      expect(err).toBeInstanceOf(ConflictError);
+      expect(err.code).toBe('CONFLICT');
+      expect(err.message).toBe('dup');
+    });
   });
 
   /* ---------------------------------------------------------------- */
